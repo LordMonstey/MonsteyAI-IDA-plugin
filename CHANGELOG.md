@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.12 - LordMonstey Made + IDA symbiote pass
+
+### Highlights
+
+- Public name aligned to `MonsteyAI-IDA-plugin`.
+- Added the `LordMonstey Made That` opening animation inside the IDA panel.
+- Added permanent `LordMonstey Made` branding in the panel header.
+- Added `Mark Review`, a direct IDA interaction that comments and colors the current AI focus as a review point.
+- Added a public IDA screenshot to the README.
+- Added `docs/SYMBIOTE_ROADMAP.md` with the next high-impact IDA interaction ideas.
+
 ## v0.3.11 - Plug-and-play public release
 
 First GitHub-ready release of Monstey-AI-plugin.

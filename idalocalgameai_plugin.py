@@ -1,4 +1,4 @@
-"""IDA entry point for Monstey-AI-plugin."""
+"""IDA entry point for MonsteyAI-IDA-plugin."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ if PLUGIN_DIR not in sys.path:
 try:
     from idalocalgameai import PLUGIN_NAME
 except Exception:
-    PLUGIN_NAME = "Monstey-AI-plugin"
+    PLUGIN_NAME = "MonsteyAI-IDA-plugin"
 
 
 ACTION_NAME = "idalocalgameai:show"
@@ -38,8 +38,8 @@ def open_panel():
 
         show_panel()
     except Exception as exc:
-        ida_kernwin.warning("Monstey-AI-plugin failed to open:\n%s" % exc)
-        ida_kernwin.msg("[Monstey-AI-plugin] UI error: %s\n" % exc)
+        ida_kernwin.warning("%s failed to open:\n%s" % (PLUGIN_NAME, exc))
+        ida_kernwin.msg("[%s] UI error: %s\n" % (PLUGIN_NAME, exc))
 
 
 class ShowPanelAction(ida_kernwin.action_handler_t):
@@ -59,7 +59,7 @@ class AnalyzeSelectionAction(ida_kernwin.action_handler_t):
             analyze_focus(force_asm=True)
         except Exception as exc:
             ida_kernwin.warning("MonsteyAI-Analyse failed:\n%s" % exc)
-            ida_kernwin.msg("[Monstey-AI-plugin] MonsteyAI-Analyse error: %s\n" % exc)
+            ida_kernwin.msg("[%s] MonsteyAI-Analyse error: %s\n" % (PLUGIN_NAME, exc))
         return 1
 
     def update(self, ctx):
@@ -100,13 +100,13 @@ class IDALocalGameAIPlugin(ida_idaapi.plugin_t):
 
             install_navigation_hooks()
         except Exception as exc:
-            ida_kernwin.msg("[Monstey-AI-plugin] Navigation hooks unavailable: %s\n" % exc)
+            ida_kernwin.msg("[%s] Navigation hooks unavailable: %s\n" % (PLUGIN_NAME, exc))
         desc = ida_kernwin.action_desc_t(
             ACTION_NAME,
             PLUGIN_NAME,
             ShowPanelAction(),
             self.wanted_hotkey,
-            "Open Monstey-AI-plugin",
+            "Open %s" % PLUGIN_NAME,
             -1,
         )
         ida_kernwin.register_action(desc)
@@ -115,7 +115,7 @@ class IDALocalGameAIPlugin(ida_idaapi.plugin_t):
             "MonsteyAI-Analyse",
             AnalyzeSelectionAction(),
             "",
-            "Analyze current IDA selection or focused instruction with Monstey-AI-plugin",
+            "Analyze current IDA selection or focused instruction with %s" % PLUGIN_NAME,
             -1,
         )
         ida_kernwin.register_action(analyze_desc)
@@ -123,7 +123,7 @@ class IDALocalGameAIPlugin(ida_idaapi.plugin_t):
             _popup_hooks = MonsteyPopupHooks()
             _popup_hooks.hook()
         ida_kernwin.attach_action_to_menu("Edit/Plugins/", ACTION_NAME, ida_kernwin.SETMENU_APP)
-        ida_kernwin.msg("[Monstey-AI-plugin] Loaded. Use Ctrl+Alt+G or Edit > Plugins.\n")
+        ida_kernwin.msg("[%s] Loaded. Use Ctrl+Alt+G or Edit > Plugins.\n" % PLUGIN_NAME)
         return IDALocalGameAIPlugmod()
 
     def term(self):

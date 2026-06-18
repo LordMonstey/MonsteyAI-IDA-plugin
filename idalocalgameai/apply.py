@@ -105,6 +105,8 @@ KIND_ITEM_COLORS = {
     "note": rgb(62, 66, 70),
 }
 
+REVIEW_COLOR = rgb(58, 86, 116)
+
 
 def confidence_color(confidence: Any) -> int:
     try:
@@ -147,6 +149,18 @@ def set_ai_comment(ea: int, text: str) -> bool:
     if len(text) > 900:
         text = text[:900] + "..."
     return bool(idc.set_cmt(ea, merge_ai_comment(ea, text), 0))
+
+
+def mark_review_item(ea: int, note: str = "") -> Dict[str, Any]:
+    text = str(note or "").strip()
+    if not text:
+        text = "Monstey review point: inspect this focus, trace XREFs, and decide whether it is a hook/map candidate."
+    ok_comment = set_ai_comment(ea, text)
+    ok_color = set_item_color(ea, REVIEW_COLOR)
+    return {
+        "ok": bool(ok_comment or ok_color),
+        "message": "Marked review point %s" % ("0x%X" % int(ea)),
+    }
 
 
 def apply_colored_annotations(

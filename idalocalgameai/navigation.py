@@ -189,7 +189,7 @@ def clear_focus_lock() -> bool:
     _state["focus_lock"] = {}
     if had_lock:
         try:
-            ida_kernwin.msg("[Monstey-AI-plugin] AI focus lock cleared\n")
+            ida_kernwin.msg("[MonsteyAI-IDA-plugin] AI focus lock cleared\n")
         except Exception:
             pass
     return had_lock
@@ -220,7 +220,7 @@ def lock_current_focus(reason: str = "manual") -> Optional[Dict[str, Any]]:
     _state["focus_lock"] = lock
     _push_history("focus_lock", ea, widget, lock.get("line") or "")
     try:
-        ida_kernwin.msg("[Monstey-AI-plugin] AI focus locked at %s. Press A again to unlock.\n" % ea)
+        ida_kernwin.msg("[MonsteyAI-IDA-plugin] AI focus locked at %s. Press A again to unlock.\n" % ea)
     except Exception:
         pass
     return dict(lock)

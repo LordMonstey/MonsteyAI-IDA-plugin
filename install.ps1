@@ -56,13 +56,13 @@ if (Test-Path -LiteralPath $PluginsCfg) {
     $Lines = $CfgText -split "\r?\n" | Where-Object {
         $_ -notmatch "idalocalgameai_plugin\.py" -and $_ -notmatch "idalocalgameai_diag\.py"
     }
-    $NewText = ($Lines -join "`r`n").TrimEnd() + "`r`n`r`nMonstey_AI_plugin                idalocalgameai_plugin.py Ctrl-Alt-G 0 GUI`r`nAI_Plugin_Diagnostic             idalocalgameai_diag.py Ctrl-Alt-D 0 GUI`r`n"
+    $NewText = ($Lines -join "`r`n").TrimEnd() + "`r`n`r`nMonsteyAI_IDA_plugin             idalocalgameai_plugin.py Ctrl-Alt-G 0 GUI`r`nAI_Plugin_Diagnostic             idalocalgameai_diag.py Ctrl-Alt-D 0 GUI`r`n"
     [System.IO.File]::WriteAllText($PluginsCfg, $NewText)
 }
 
-Write-Host "Installed Monstey-AI-plugin to:"
+Write-Host "Installed MonsteyAI-IDA-plugin to:"
 Write-Host "  $PluginTarget"
 Write-Host "  $RootEntryTarget"
 Write-Host "  $DiagTarget"
 Write-Host ""
-Write-Host "Restart IDA, then use Ctrl+Alt+G or Edit > Plugins > Monstey-AI-plugin."
+Write-Host "Restart IDA, then use Ctrl+Alt+G or Edit > Plugins > MonsteyAI-IDA-plugin."

@@ -10,7 +10,7 @@ import ida_kernwin
 
 
 ACTION_NAME = "idalocalgameai:bootstrap_show"
-PLUGIN_NAME = "Monstey-AI-plugin"
+PLUGIN_NAME = "MonsteyAI-IDA-plugin"
 
 
 def _candidate_roots():
@@ -64,8 +64,8 @@ class BootstrapAction(ida_kernwin.action_handler_t):
         try:
             _open_panel()
         except Exception as exc:
-            ida_kernwin.warning("Monstey-AI-plugin failed to open:\n%s" % exc)
-            ida_kernwin.msg("[Monstey-AI-plugin] bootstrap error:\n%s\n" % traceback.format_exc())
+            ida_kernwin.warning("%s failed to open:\n%s" % (PLUGIN_NAME, exc))
+            ida_kernwin.msg("[%s] bootstrap error:\n%s\n" % (PLUGIN_NAME, traceback.format_exc()))
         return 1
 
     def update(self, ctx):
@@ -84,7 +84,7 @@ def install():
         PLUGIN_NAME,
         BootstrapAction(),
         "Ctrl+Alt+G",
-        "Open Monstey-AI-plugin",
+        "Open %s" % PLUGIN_NAME,
         -1,
     )
     ok = ida_kernwin.register_action(desc)
@@ -92,7 +92,7 @@ def install():
         ida_kernwin.attach_action_to_menu("Edit/Plugins/", ACTION_NAME, ida_kernwin.SETMENU_APP)
     except Exception:
         pass
-    ida_kernwin.msg("[Monstey-AI-plugin] idauser bootstrap installed (action=%s). Use Ctrl+Alt+G.\n" % ok)
+    ida_kernwin.msg("[%s] idauser bootstrap installed (action=%s). Use Ctrl+Alt+G.\n" % (PLUGIN_NAME, ok))
 
 
 install()

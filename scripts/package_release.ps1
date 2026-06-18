@@ -20,7 +20,7 @@ if (!$OutputDir) {
     $OutputDir = Split-Path -Parent $Root
 }
 
-$PackageName = "Monstey-AI-plugin-v$Version"
+$PackageName = "MonsteyAI-IDA-plugin-v$Version"
 $StageRoot = Join-Path $env:TEMP ("monstey-ai-plugin-package-" + [guid]::NewGuid().ToString("N"))
 $StageDir = Join-Path $StageRoot $PackageName
 $ZipPath = Join-Path $OutputDir ($PackageName + ".zip")

@@ -1,6 +1,6 @@
-# Monstey-AI-plugin
+# MonsteyAI-IDA-plugin
 
-![Monstey-AI-plugin banner](docs/assets/monstey-banner.svg)
+![MonsteyAI-IDA-plugin banner](docs/assets/monstey-banner.svg)
 
 [![IDA Pro](https://img.shields.io/badge/IDA%20Pro-9.0%2B-4aa3ff)](#)
 [![Hex-Rays](https://img.shields.io/badge/Hex--Rays-supported-9fd0ff)](#)
@@ -12,14 +12,22 @@ Local-first AI assistant for IDA Pro + Hex-Rays, focused on game-modding reverse
 
 Monstey is built for the moment where raw decompiler output is not enough: red/non-decompilable regions, anonymous `sub_...` forests, dump-to-dump drift, XREF-heavy behavior, and trainer/modding triage. It keeps the analyst in IDA, follows the current focus, collects bounded evidence, then turns that into names, comments, hook experiments, and structure hypotheses.
 
+## Screenshots
+
+![MonsteyAI-IDA-plugin running inside IDA with analysis and debug trace](docs/assets/monstey-ida-analysis-debug.png)
+
 ## Why it is different
 
 - **Focus-aware IDA workflow:** mouse/cursor focus, focus lock, right-click analysis, red-region ASM fallback, and a visible AI focus indicator.
 - **Static-first reverse context:** decompiler text, assembly, bytes, strings, XREFs, comments, data refs, external evidence, and per-process memory are joined before prompting.
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
+- **IDA symbiote actions:** Monstey can jump to the exact AI focus, highlight it, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
+- **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
 - **Local-first but provider-flexible:** Ollama/LM Studio/vLLM or Gemini hosted through an OpenAI-compatible API.
 - **Fast failure behavior:** semantic fallback, watchdogs, debug trace popup, and copyable diagnostics instead of silent five-minute hangs.
 - **Plug-and-play setup:** one setup command installs the plugin, configures local defaults, prepares the launcher, and can bootstrap Ollama.
+
+Roadmap: [IDA Symbiote Roadmap](docs/SYMBIOTE_ROADMAP.md)
 
 Target for this MVP:
 
@@ -88,7 +96,9 @@ Setup notes:
 - Analyze red/non-decompilable regions using assembly fallback.
 - Track recent IDA navigation, mouse hover/click, pseudocode cursor, highlighted identifier, active widget, and nearby focused assembly.
 - Right-click `MonsteyAI-Analyse` action in IDA views.
+- Opening signature overlay: `LordMonstey Made That`.
 - Visible `Process:` label in the panel header so you can confirm the cleaned dump/process context before trusting the answer.
+- `Mark Review` writes a Monstey review comment and color marker directly at the current AI focus inside IDA.
 - `Dump Context` tab for analyst-provided process, engine, objective, class, global, and naming notes.
 - Pre-analysis hypothesis prompt: tell the AI what you think the function does, or let it analyze solo.
 - Extract assembly, bytes, calls, callers, data refs, strings, comments, and engine hints.
@@ -185,6 +195,12 @@ Setup notes:
   - `MonsteyAI-Launcher.cmd` starts the local backend and launches IDA/dumps;
   - `scripts\check_environment.ps1` prints a copyable environment report for support/debugging.
   - `scripts\package_release.ps1` creates a clean release zip for GitHub.
+- Branding + IDA symbiote pass v0.3.12:
+  - public repo/display name updated to `MonsteyAI-IDA-plugin`;
+  - opening overlay animation signs the plugin with `LordMonstey Made That`;
+  - header badge reinforces `LordMonstey Made`;
+  - `Mark Review` button annotates/colors the current AI focus directly in IDA;
+  - README includes the live IDA screenshot and links to the IDA Symbiote roadmap.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;
@@ -305,7 +321,7 @@ Ctrl+Alt+G
 or:
 
 ```text
-Edit > Plugins > Monstey-AI-plugin
+Edit > Plugins > MonsteyAI-IDA-plugin
 ```
 
 ## Workflow

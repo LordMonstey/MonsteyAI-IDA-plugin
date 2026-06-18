@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Monstey-AI-plugin.
+Thanks for helping improve MonsteyAI-IDA-plugin.
 
 ## Development Setup
 
@@ -11,7 +11,7 @@ Thanks for helping improve Monstey-AI-plugin.
 .\setup.cmd -InstallScope User -ConfigureLLM -CreateLauncher
 ```
 
-3. Restart IDA and open `Monstey-AI-plugin` with `Ctrl+Alt+G`.
+3. Restart IDA and open `MonsteyAI-IDA-plugin` with `Ctrl+Alt+G`.
 
 ## Validation
 

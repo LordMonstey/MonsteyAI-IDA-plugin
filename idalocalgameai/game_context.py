@@ -271,7 +271,7 @@ def duckduckgo_lookup(candidate: str, ttl_days: int = 14) -> Dict[str, Any]:
         "error": "",
     }
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Monstey-AI-plugin/0.1"})
+        req = urllib.request.Request(url, headers={"User-Agent": "MonsteyAI-IDA-plugin/0.3"})
         with urllib.request.urlopen(req, timeout=4) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
         result["heading"] = str(data.get("Heading") or "")[:160]

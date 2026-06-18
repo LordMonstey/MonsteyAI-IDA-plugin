@@ -352,4 +352,4 @@ New-DesktopShortcut $ResolvedIdaPath
 
 Write-Host ""
 Write-Ok "Setup complete."
-Write-Host "Restart IDA, then open Monstey-AI-plugin with Ctrl+Alt+G or Edit > Plugins."
+Write-Host "Restart IDA, then open MonsteyAI-IDA-plugin with Ctrl+Alt+G or Edit > Plugins."

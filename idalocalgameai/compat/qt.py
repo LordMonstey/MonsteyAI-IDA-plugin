@@ -10,7 +10,7 @@ except ImportError:
 
         QT_BINDING = "PySide6"
     except ImportError as exc:
-        raise ImportError("Monstey-AI-plugin requires PyQt5 in IDA 9.0 or PySide6 in newer IDA builds") from exc
+        raise ImportError("MonsteyAI-IDA-plugin requires PyQt5 in IDA 9.0 or PySide6 in newer IDA builds") from exc
 
 
 def signal(*args, **kwargs):

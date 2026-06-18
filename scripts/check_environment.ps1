@@ -70,7 +70,7 @@ $Rows = [ordered]@{
     "PowerShell" = $PSVersionTable.PSVersion.ToString()
 }
 
-Write-Host "Monstey-AI-plugin environment check"
+Write-Host "MonsteyAI-IDA-plugin environment check"
 Write-Host "=================================="
 foreach ($Key in $Rows.Keys) {
     Write-Host ("{0,-38} {1}" -f ($Key + ":"), $Rows[$Key])

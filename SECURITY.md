@@ -11,7 +11,7 @@ Please report security-sensitive issues privately when possible. If you use a pu
 
 ## Data Handling
 
-Monstey-AI-plugin is local-first by design. Local provider mode sends analysis prompts only to the configured OpenAI-compatible endpoint, usually `127.0.0.1`.
+MonsteyAI-IDA-plugin is local-first by design. Local provider mode sends analysis prompts only to the configured OpenAI-compatible endpoint, usually `127.0.0.1`.
 
 Hosted provider mode sends the selected bounded analysis context to the configured hosted API. Review the provider setting before analyzing private binaries.
 

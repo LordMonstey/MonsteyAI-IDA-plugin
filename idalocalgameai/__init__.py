@@ -1,4 +1,4 @@
-"""Monstey-AI-plugin package."""
+"""MonsteyAI-IDA-plugin package."""
 
-PLUGIN_NAME = "Monstey-AI-plugin"
-PLUGIN_VERSION = "0.3.11"
+PLUGIN_NAME = "MonsteyAI-IDA-plugin"
+PLUGIN_VERSION = "0.3.12"

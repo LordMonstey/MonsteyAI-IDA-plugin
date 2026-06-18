@@ -2,9 +2,9 @@
   "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
-    "name": "Monstey-AI-plugin",
+    "name": "MonsteyAI-IDA-plugin",
     "entryPoint": "idalocalgameai_plugin.py",
-    "version": "0.3.11",
+    "version": "0.3.12",
     "idaVersions": [
       "9.0"
     ],
@@ -27,11 +27,11 @@
       "assembly-analysis"
     ],
     "urls": {
-      "repository": "https://github.com/yourname/ida-local-game-ai"
+      "repository": "https://github.com/LordMonstey/MonsteyAI-IDA-plugin"
     },
     "authors": [
       {
-        "name": "Monstey-AI-plugin contributors"
+        "name": "LordMonstey and MonsteyAI-IDA-plugin contributors"
       }
     ]
   }

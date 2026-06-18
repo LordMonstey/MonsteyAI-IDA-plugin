@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for testing Monstey-AI-plugin. Please remove API keys, private dumps, IDBs, and proprietary names before posting.
+        Thanks for testing MonsteyAI-IDA-plugin. Please remove API keys, private dumps, IDBs, and proprietary names before posting.
   - type: textarea
     id: summary
     attributes:

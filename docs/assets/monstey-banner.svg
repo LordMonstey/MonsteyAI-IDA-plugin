@@ -1,10 +1,10 @@
 <svg width="1280" height="420" viewBox="0 0 1280 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Monstey-AI-plugin</title>
+  <title id="title">MonsteyAI-IDA-plugin</title>
   <desc id="desc">IDA Pro reverse engineering assistant with local LLM, evidence packs, trainer radar, and static analysis workflow.</desc>
   <rect width="1280" height="420" rx="0" fill="#101317"/>
   <rect x="46" y="42" width="1188" height="336" rx="10" fill="#171b20" stroke="#2d3742"/>
   <rect x="46" y="42" width="1188" height="48" rx="10" fill="#232932"/>
-  <text x="78" y="73" fill="#f4f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700">Monstey-AI-plugin</text>
+  <text x="78" y="73" fill="#f4f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700">MonsteyAI-IDA-plugin</text>
   <text x="392" y="73" fill="#ffd36a" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Process aware</text>
   <text x="566" y="73" fill="#80ffb0" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Local-first LLM</text>
   <text x="760" y="73" fill="#9fd0ff" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">IDA + Hex-Rays</text>

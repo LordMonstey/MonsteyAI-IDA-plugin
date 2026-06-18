@@ -13,7 +13,7 @@ class DiagPlugmod(ida_idaapi.plugmod_t):
 
 class DiagPlugin(ida_idaapi.plugin_t):
     flags = ida_idaapi.PLUGIN_MULTI
-    comment = "Diagnostic Python plugin for Monstey-AI-plugin"
+    comment = "Diagnostic Python plugin for MonsteyAI-IDA-plugin"
     help = "Verifies that IDA can load Python plugins"
     wanted_name = "AI Plugin Diagnostic"
     wanted_hotkey = "Ctrl-Alt-D"

@@ -1,4 +1,4 @@
-"""Dockable IDA UI for Monstey-AI-plugin."""
+"""Dockable IDA UI for MonsteyAI-IDA-plugin."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import idaapi
 
 from .. import PLUGIN_NAME, PLUGIN_VERSION
 from ..analysis_policy import agent_policy, model_policy, watchdog_seconds
-from ..apply import apply_colored_annotations, apply_function_name, refresh_ida
+from ..apply import apply_colored_annotations, apply_function_name, mark_review_item, refresh_ida
 from ..compat.qt import QT_BINDING, QtCore, QtGui, QtWidgets
 from ..config import GEMINI_MODEL_PRESETS, MODEL_PRESETS, PluginConfig, config_dir, config_path, load_config, save_config
 from ..dump_context import dump_context_path, dump_context_payload, load_dump_context, save_dump_context
@@ -154,7 +154,7 @@ IDB_HOOKS_BASE = getattr(ida_idp, "IDB_Hooks", object)
 
 def info(message: str) -> None:
     try:
-        ida_kernwin.msg("[Monstey-AI-plugin] %s\n" % message)
+        ida_kernwin.msg("[%s] %s\n" % (PLUGIN_NAME, message))
     except Exception:
         pass
 
@@ -162,7 +162,7 @@ def info(message: str) -> None:
 class DebugTraceDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Monstey-AI-plugin - Analysis Debug Trace")
+        self.setWindowTitle("%s - Analysis Debug Trace" % PLUGIN_NAME)
         self.resize(980, 440)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -198,7 +198,7 @@ class DebugTraceDialog(QtWidgets.QDialog):
 class TrainerRadarDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Monstey-AI-plugin - Trainer Radar")
+        self.setWindowTitle("%s - Trainer Radar" % PLUGIN_NAME)
         self.resize(1080, 680)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -229,6 +229,69 @@ class TrainerRadarDialog(QtWidgets.QDialog):
     def closeEvent(self, event) -> None:
         event.ignore()
         self.hide()
+
+
+class MonsteyMadeOverlay(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "QWidget#MonsteyMadeOverlay {"
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #101317, stop:1 #1f2933);"
+            "border: 1px solid #425468;"
+            "}"
+            "QLabel#MadeKicker { color:#80ffb0; font-size:13px; font-weight:700; letter-spacing:0px; }"
+            "QLabel#MadeTitle { color:#f7fbff; font-size:28px; font-weight:900; letter-spacing:0px; }"
+            "QLabel#MadeSub { color:#aeb9c5; font-size:12px; font-weight:600; }"
+        )
+        self.setObjectName("MonsteyMadeOverlay")
+        self.opacity_effect = QtWidgets.QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+        self.opacity_effect.setOpacity(0.0)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.addStretch(1)
+        kicker = QtWidgets.QLabel("MONSTEY IDA SYMBIOTE")
+        kicker.setObjectName("MadeKicker")
+        kicker.setAlignment(QtCore.Qt.AlignCenter)
+        title = QtWidgets.QLabel("LordMonstey Made That")
+        title.setObjectName("MadeTitle")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        subtitle = QtWidgets.QLabel("focus-aware reverse engineering | evidence packs | trainer radar")
+        subtitle.setObjectName("MadeSub")
+        subtitle.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(kicker)
+        layout.addWidget(title)
+        layout.addSpacing(6)
+        layout.addWidget(subtitle)
+        layout.addStretch(1)
+        self.anim = QtCore.QSequentialAnimationGroup(self)
+        fade_in = QtCore.QPropertyAnimation(self.opacity_effect, b"opacity")
+        fade_in.setDuration(280)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(0.96)
+        fade_in.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        pause = QtCore.QPauseAnimation(850)
+        fade_out = QtCore.QPropertyAnimation(self.opacity_effect, b"opacity")
+        fade_out.setDuration(620)
+        fade_out.setStartValue(0.96)
+        fade_out.setEndValue(0.0)
+        fade_out.setEasingCurve(QtCore.QEasingCurve.InOutCubic)
+        self.anim.addAnimation(fade_in)
+        self.anim.addAnimation(pause)
+        self.anim.addAnimation(fade_out)
+        self.anim.finished.connect(self.hide)
+
+    def play(self) -> None:
+        parent = self.parentWidget()
+        if parent is not None:
+            self.setGeometry(parent.rect())
+        self.raise_()
+        self.show()
+        self.anim.stop()
+        self.opacity_effect.setOpacity(0.0)
+        self.anim.start()
 
 
 class MonsteyIDBHooks(IDB_HOOKS_BASE):
@@ -296,6 +359,9 @@ class MainWidget(QtWidgets.QWidget):
         self._load_external_evidence_into_ui()
         self._refresh_game_map()
         self._set_status("Ready", ok=True)
+        self.made_overlay = MonsteyMadeOverlay(self)
+        self.made_overlay.hide()
+        QtCore.QTimer.singleShot(260, self._show_made_overlay)
 
     def _build_ui(self) -> None:
         self.setObjectName("IDALocalGameAIWidget")
@@ -305,7 +371,13 @@ class MainWidget(QtWidgets.QWidget):
         root.setSpacing(8)
 
         header = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("%s  v%s" % (PLUGIN_NAME, PLUGIN_VERSION))
+        title = QtWidgets.QLabel(
+            "<span style='color:#f6f8fb;'>MonsteyAI IDA</span> "
+            "<span style='color:#8a929c;'>v%s</span> "
+            "<span style='color:#80ffb0; font-size:11px; font-weight:800;'>LordMonstey Made</span>"
+            % html.escape(str(PLUGIN_VERSION))
+        )
+        title.setTextFormat(QtCore.Qt.RichText)
         title_font = QtGui.QFont()
         title_font.setBold(True)
         title.setFont(title_font)
@@ -339,9 +411,14 @@ class MainWidget(QtWidgets.QWidget):
         self.btn_jump_focus.setMaximumWidth(72)
         self.btn_jump_focus.setToolTip("Jump to the current AI focus address.")
         self.btn_jump_focus.clicked.connect(self._jump_to_ai_focus)
+        self.btn_mark_review = QtWidgets.QPushButton("Mark Review")
+        self.btn_mark_review.setMaximumWidth(102)
+        self.btn_mark_review.setToolTip("Write a Monstey review comment and color marker at the current AI focus in IDA.")
+        self.btn_mark_review.clicked.connect(self._mark_ai_focus_review)
         focus_row.addWidget(self.focus_indicator_label, 1)
         focus_row.addWidget(self.focus_highlight_check)
         focus_row.addWidget(self.btn_jump_focus)
+        focus_row.addWidget(self.btn_mark_review)
         root.addLayout(focus_row)
 
         controls = QtWidgets.QHBoxLayout()
@@ -1355,6 +1432,20 @@ class MainWidget(QtWidgets.QWidget):
         safe_text = html.escape(sanitize_text(text, max_chars=900, collapse_ws=True))
         self.status_label.setText('<span style="color:%s; font-weight:600">%s</span> | %s' % (color, safe_text, QT_BINDING))
 
+    def resizeEvent(self, event) -> None:
+        try:
+            super().resizeEvent(event)
+        except Exception:
+            pass
+        overlay = getattr(self, "made_overlay", None)
+        if overlay is not None:
+            overlay.setGeometry(self.rect())
+
+    def _show_made_overlay(self) -> None:
+        overlay = getattr(self, "made_overlay", None)
+        if overlay is not None:
+            overlay.play()
+
     def _refresh_focus_indicator(self) -> None:
         try:
             snap = navigation_snapshot()
@@ -1365,6 +1456,8 @@ class MainWidget(QtWidgets.QWidget):
                 "color:#ff9f9f; font-weight:700; padding:3px 7px; border:1px solid #553030; background:#271c1e;"
             )
             self.focus_indicator_label.setToolTip("Focus tracker error: %s" % exc)
+            self.btn_jump_focus.setEnabled(False)
+            self.btn_mark_review.setEnabled(False)
             return
         source = str(focus.get("source") or "none")
         ea = focus.get("ea") or "-"
@@ -1449,6 +1542,7 @@ class MainWidget(QtWidgets.QWidget):
             tip.append("Line: %s" % line[:700])
         self.focus_indicator_label.setToolTip("\n".join(tip))
         self.btn_jump_focus.setEnabled(marker_ea is not None)
+        self.btn_mark_review.setEnabled(marker_ea is not None)
 
     def _on_focus_highlight_toggled(self, checked: bool) -> None:
         self.focus_highlight_enabled = bool(checked)
@@ -1470,6 +1564,23 @@ class MainWidget(QtWidgets.QWidget):
         except Exception as exc:
             self._set_status("Jump to AI focus failed", ok=False)
             info("Jump to AI focus failed: %s" % exc)
+
+    def _mark_ai_focus_review(self) -> None:
+        snap = navigation_snapshot()
+        focus = preferred_focus_ea(snap)
+        ea = parse_focus_ea(focus.get("ea"))
+        if ea is None:
+            self._set_status("No AI focus address to mark", ok=False)
+            return
+        source = str(focus.get("source") or "focus")
+        line = sanitize_text(str(focus.get("line") or ""), max_chars=260, collapse_ws=True)
+        note = "Monstey review point from %s focus. Next: inspect XREFs/callers, run Quick Local Pass, and decide hook/map usefulness." % source
+        if line:
+            note += " Focus line: %s" % line
+        result = mark_review_item(ea, note)
+        refresh_ida()
+        self._set_status(result.get("message", "Marked review point"), ok=bool(result.get("ok")))
+        info(result.get("message", "Marked review point"))
 
     def _schedule_idb_rename_refresh(self, ea: Any, new_name: Any = "") -> None:
         try:

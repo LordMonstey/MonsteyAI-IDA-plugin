@@ -4,10 +4,12 @@
 
 1. Start your local LLM server if you use the local provider.
 2. Open IDA.
-3. Open `Monstey-AI-plugin`.
+3. Open `MonsteyAI-IDA-plugin`.
 4. Go to `Settings`.
 5. Confirm `Provider`, `Base URL`, `Model preset`, and `Engine profile`.
 6. Press `Test LLM`.
+
+The panel opens with a short `LordMonstey Made That` signature animation. It is cosmetic and non-blocking.
 
 ## Model presets
 
@@ -50,6 +52,8 @@ The `AI focus` row shows which address Preview/Analyze will use.
 - Hold `A` for 1.5 seconds to lock the AI focus on the current address.
 - Press `A` again to unlock.
 - When locked, the focus row shows `LOCKED` and that address wins over mouse/cursor movement.
+- `Jump` moves IDA to the current AI focus.
+- `Mark Review` writes a Monstey review comment and color marker directly into the IDB at the current AI focus.
 
 ## Agent Mode
 
