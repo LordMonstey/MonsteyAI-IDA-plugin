@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Python
+        shell: pwsh
+        run: |
+          python -m py_compile (Get-ChildItem -Path .\idalocalgameai -Recurse -Filter *.py | ForEach-Object { $_.FullName })
+
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $files = @(
+            ".\setup.ps1",
+            ".\install.ps1",
+            ".\MonsteyAI-Launcher.ps1",
+            ".\scripts\check_environment.ps1",
+            ".\scripts\package_release.ps1",
+            ".\scripts\start_ollama.ps1"
+          )
+          foreach ($file in $files) {
+            $null = [scriptblock]::Create((Get-Content -LiteralPath $file -Raw))
+            Write-Host "parse ok: $file"
+          }
+
+      - name: Setup dry run
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -DryRun -InstallScope User -ConfigureLLM -CreateLauncher -NonInteractive
+
+      - name: Package release
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -OutputDir "$env:RUNNER_TEMP"

@@ -1,0 +1,43 @@
+<svg width="1280" height="420" viewBox="0 0 1280 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Monstey-AI-plugin</title>
+  <desc id="desc">IDA Pro reverse engineering assistant with local LLM, evidence packs, trainer radar, and static analysis workflow.</desc>
+  <rect width="1280" height="420" rx="0" fill="#101317"/>
+  <rect x="46" y="42" width="1188" height="336" rx="10" fill="#171b20" stroke="#2d3742"/>
+  <rect x="46" y="42" width="1188" height="48" rx="10" fill="#232932"/>
+  <text x="78" y="73" fill="#f4f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700">Monstey-AI-plugin</text>
+  <text x="392" y="73" fill="#ffd36a" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Process aware</text>
+  <text x="566" y="73" fill="#80ffb0" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Local-first LLM</text>
+  <text x="760" y="73" fill="#9fd0ff" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">IDA + Hex-Rays</text>
+  <rect x="78" y="124" width="318" height="208" rx="8" fill="#1f252d" stroke="#3d4d5f"/>
+  <text x="104" y="157" fill="#9fd0ff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">AI Focus</text>
+  <rect x="104" y="179" width="236" height="30" rx="6" fill="#15251d" stroke="#346b4c"/>
+  <circle cx="122" cy="194" r="5" fill="#78f29b"/>
+  <text x="138" y="199" fill="#e8fff0" font-family="Consolas, monospace" font-size="13">mouse 0x7FF7550BE290</text>
+  <rect x="104" y="228" width="248" height="1" fill="#34404c"/>
+  <text x="104" y="260" fill="#f4f7fb" font-family="Consolas, monospace" font-size="13">movss xmm0, [rcx+74h]</text>
+  <text x="104" y="284" fill="#ffcf6b" font-family="Consolas, monospace" font-size="13">call  sub_damage_accumulator</text>
+  <text x="104" y="308" fill="#95e6ff" font-family="Consolas, monospace" font-size="13">xref  caller/player_state</text>
+  <rect x="440" y="124" width="388" height="208" rx="8" fill="#1f252d" stroke="#3d4d5f"/>
+  <text x="466" y="157" fill="#ffd36a" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Evidence Pack</text>
+  <rect x="466" y="179" width="106" height="32" rx="6" fill="#263140"/>
+  <text x="487" y="200" fill="#ffffff" font-family="Consolas, monospace" font-size="13">F001</text>
+  <text x="592" y="200" fill="#e8eef6" font-family="Segoe UI, Arial, sans-serif" font-size="13">float accumulator loop</text>
+  <rect x="466" y="222" width="106" height="32" rx="6" fill="#263140"/>
+  <text x="487" y="243" fill="#ffffff" font-family="Consolas, monospace" font-size="13">F002</text>
+  <text x="592" y="243" fill="#e8eef6" font-family="Segoe UI, Arial, sans-serif" font-size="13">caller/callee path joined</text>
+  <rect x="466" y="265" width="106" height="32" rx="6" fill="#263140"/>
+  <text x="487" y="286" fill="#ffffff" font-family="Consolas, monospace" font-size="13">C001</text>
+  <text x="592" y="286" fill="#e8eef6" font-family="Segoe UI, Arial, sans-serif" font-size="13">damage/stat candidate</text>
+  <rect x="872" y="124" width="318" height="208" rx="8" fill="#1f252d" stroke="#3d4d5f"/>
+  <text x="898" y="157" fill="#80ffb0" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Trainer Radar</text>
+  <rect x="898" y="179" width="244" height="36" rx="7" fill="#10241a" stroke="#346b4c"/>
+  <text x="918" y="202" fill="#80ffb0" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">Hook usefulness: high</text>
+  <text x="898" y="246" fill="#f4f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="14">Log first: args, return, caller</text>
+  <text x="898" y="273" fill="#f4f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="14">Strategy: observe -> gate -> mutate</text>
+  <text x="898" y="300" fill="#f4f7fb" font-family="Segoe UI, Arial, sans-serif" font-size="14">Action Lab: MinHook scaffold</text>
+  <path d="M403 228 C417 228 421 228 433 228" stroke="#536273" stroke-width="2"/>
+  <path d="M835 228 C849 228 853 228 865 228" stroke="#536273" stroke-width="2"/>
+  <circle cx="416" cy="228" r="4" fill="#9fd0ff"/>
+  <circle cx="850" cy="228" r="4" fill="#ffd36a"/>
+  <text x="78" y="366" fill="#9aa7b5" font-family="Segoe UI, Arial, sans-serif" font-size="15">Static-first IDA assistant for game modding labs: focused context, local LLMs, XREF scouts, semantic fallback, copyable diagnostics, and plug-and-play setup.</text>
+</svg>

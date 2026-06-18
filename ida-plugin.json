@@ -1,0 +1,38 @@
+{
+  "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
+  "IDAMetadataDescriptorVersion": 1,
+  "plugin": {
+    "name": "Monstey-AI-plugin",
+    "entryPoint": "idalocalgameai_plugin.py",
+    "version": "0.3.11",
+    "idaVersions": [
+      "9.0"
+    ],
+    "platforms": [
+      "windows-x86_64"
+    ],
+    "description": "Local-first AI assistant for IDA Pro and Hex-Rays, focused on game-modding reverse engineering and non-decompilable assembly regions.",
+    "license": "MIT",
+    "categories": [
+      "api-scripting-and-automation",
+      "ui-ux-and-visualization"
+    ],
+    "keywords": [
+      "local-llm",
+      "game-modding",
+      "hex-rays",
+      "idapython",
+      "reverse-engineering",
+      "ollama",
+      "assembly-analysis"
+    ],
+    "urls": {
+      "repository": "https://github.com/yourname/ida-local-game-ai"
+    },
+    "authors": [
+      {
+        "name": "Monstey-AI-plugin contributors"
+      }
+    ]
+  }
+}

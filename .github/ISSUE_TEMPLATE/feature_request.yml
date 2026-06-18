@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a workflow, UI, static analysis, or trainer-radar improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: What reverse-engineering workflow should become easier?
+      placeholder: "Example: compare old/new pseudocode and auto-suggest renamed offsets."
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current friction
+      description: What is slow, unclear, missing, or annoying today?
+    validations:
+      required: true
+  - type: textarea
+    id: desired
+    attributes:
+      label: Desired behavior
+      description: What should the UI or analysis output do?
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes or examples
+      description: Add sanitized examples, no dumps/API keys/proprietary data.
+    validations:
+      required: false

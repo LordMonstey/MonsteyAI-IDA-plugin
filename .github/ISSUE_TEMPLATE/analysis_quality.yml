@@ -1,0 +1,39 @@
+name: Analysis quality
+description: Report a wrong or weak reverse-engineering interpretation.
+title: "[Analysis]: "
+labels: ["analysis-quality", "needs-evidence"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please share minimal sanitized evidence only. Do not upload proprietary dumps, IDBs, private symbols, or API keys.
+  - type: textarea
+    id: hint
+    attributes:
+      label: Analyst hint you gave Monstey
+      placeholder: "Example: damage handler, bitstream reader, inventory stack update..."
+    validations:
+      required: false
+  - type: textarea
+    id: output
+    attributes:
+      label: Monstey output
+      description: Paste the relevant summary/trainer radar/debug trace.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized code/evidence
+      description: Paste minimal pseudocode, assembly, strings, or XREF facts needed to understand the miss.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: Better interpretation
+      description: What should Monstey have concluded?
+    validations:
+      required: true

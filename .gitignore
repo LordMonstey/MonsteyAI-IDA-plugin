@@ -1,0 +1,37 @@
+__pycache__/
+*.pyc
+*.pyo
+*.zip
+.idea/
+.vscode/
+
+# Local Monstey/LLM state
+.monstey-ai-plugin/
+config.json
+setup_state.json
+*.log
+
+# IDA databases and local reverse-engineering material
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.idb
+*.i64
+*.id0
+*.idb.*
+*.i64.*
+*.dmp
+*.dump
+*.bin
+*.exe
+*.dll
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
