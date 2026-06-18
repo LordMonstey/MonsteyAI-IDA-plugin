@@ -11,18 +11,20 @@ MonsteyAI-IDA-plugin should feel less like a chatbot next to IDA and more like a
 - Apply AI suggested names, comments, and colors.
 - Right-click `MonsteyAI-Analyse` in IDA views.
 - `Mark Review` writes a Monstey review comment and color marker at the current AI focus.
+- Persistent `Review Queue` stores review marks per dump/process with jump, copy, remove, and clear actions.
+- Animated analysis pipeline shows where Monstey is during a pass.
+- Status toasts confirm completed actions without covering the analysis.
 - IDA rename events refresh Monstey context labels and global/data names.
 
 ## High-Impact Next Moves
 
-### 1. Review Trail
+### 1. Review Trail Upgrade
 
-Create a persistent review queue in the IDB:
+Extend the current Review Queue:
 
-- mark current focus as `candidate`, `needs-xref`, `hook-later`, `not-useful`, or `confirmed`;
-- show those items in a dockable queue;
-- jump between them;
-- export a clean review report.
+- add status presets: `candidate`, `needs-xref`, `hook-later`, `not-useful`, `confirmed`;
+- allow inline status editing;
+- export a richer markdown review report.
 
 ### 2. XREF Walk Mode
 

@@ -48,6 +48,7 @@ def empty_game_map(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "engine_hints": {},
         "functions": {},
         "feedback": {},
+        "review_queue": {},
     }
 
 
@@ -65,6 +66,7 @@ def load_game_map(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         data.setdefault("engine_hints", {})
         data.setdefault("functions", {})
         data.setdefault("feedback", {})
+        data.setdefault("review_queue", {})
         return data
     except Exception:
         return empty_game_map(context)
@@ -179,6 +181,52 @@ def upsert_feedback(context: Dict[str, Any], feedback: Dict[str, Any]) -> str:
     return game_map_path(context)
 
 
+def upsert_review_mark(context: Dict[str, Any], review: Dict[str, Any]) -> str:
+    data = load_game_map(context)
+    data["database"] = context.get("database") or data.get("database") or {}
+    address = sanitize_label(review.get("address") or context.get("start_ea") or "unknown", 80)
+    if not address:
+        address = "unknown"
+    entry = {
+        "address": address,
+        "name": sanitize_label(review.get("name") or "", 160),
+        "source": sanitize_label(review.get("source") or "", 80),
+        "status": sanitize_label(review.get("status") or "review", 80),
+        "note": sanitize_prompt_text(review.get("note") or "", 1000),
+        "line": sanitize_prompt_text(review.get("line") or "", 700),
+        "updated_at": utc_now(),
+    }
+    data.setdefault("review_queue", {})[address] = entry
+    save_game_map(data, context)
+    return game_map_path(context)
+
+
+def remove_review_mark(context: Dict[str, Any], address: Any) -> str:
+    data = load_game_map(context)
+    key = sanitize_label(address or "", 80)
+    queue = data.setdefault("review_queue", {})
+    if isinstance(queue, dict) and key in queue:
+        del queue[key]
+    save_game_map(data, context)
+    return game_map_path(context)
+
+
+def clear_review_marks(context: Dict[str, Any]) -> str:
+    data = load_game_map(context)
+    data["review_queue"] = {}
+    save_game_map(data, context)
+    return game_map_path(context)
+
+
+def sorted_review_marks(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    queue = data.get("review_queue") or {}
+    if not isinstance(queue, dict):
+        return []
+    rows = [value for value in queue.values() if isinstance(value, dict)]
+    rows.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    return rows
+
+
 def sorted_functions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     funcs = data.get("functions") or {}
     if not isinstance(funcs, dict):
@@ -231,11 +279,13 @@ def render_game_map(data: Dict[str, Any], limit: int = 40) -> str:
     funcs = sorted_functions(data)
     hints = data.get("engine_hints") or {}
     feedback = data.get("feedback") or {}
+    review_rows = sorted_review_marks(data)
     top_hints = sorted(hints.items(), key=lambda item: int(item[1]), reverse=True)[:12]
     lines = [
         "Database: %s" % sanitize_label(db.get("root_filename") or db.get("input_file") or "unknown", 160),
         "Functions analyzed: %d" % len(funcs),
         "User corrections: %d" % (len(feedback) if isinstance(feedback, dict) else 0),
+        "Review marks: %d" % len(review_rows),
         "Updated: %s" % (data.get("updated_at") or "-"),
     ]
     if top_hints:

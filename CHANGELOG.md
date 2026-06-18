@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.13 - Pleasant workflow pass
+
+### Highlights
+
+- Added a compact animated analysis pipeline in the Function tab.
+- Added non-intrusive status toasts for completed actions, errors, copies, jumps, and applies.
+- Added a persistent `Review Queue` tab for Monstey review marks.
+- `Mark Review` now writes into IDA and persists the mark in the per-dump Process Map.
+- Review Queue supports refresh, jump, copy, remove, and clear.
+- Process Map now counts review marks.
+
 ## v0.3.12 - LordMonstey Made + IDA symbiote pass
 
 ### Highlights

@@ -23,6 +23,7 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
 - **IDA symbiote actions:** Monstey can jump to the exact AI focus, highlight it, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
 - **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
+- **Pleasant workflow layer:** animated analysis pipeline, lightweight status toasts, and a persistent Review Queue make long LLM passes easier to follow.
 - **Local-first but provider-flexible:** Ollama/LM Studio/vLLM or Gemini hosted through an OpenAI-compatible API.
 - **Fast failure behavior:** semantic fallback, watchdogs, debug trace popup, and copyable diagnostics instead of silent five-minute hangs.
 - **Plug-and-play setup:** one setup command installs the plugin, configures local defaults, prepares the launcher, and can bootstrap Ollama.
@@ -99,6 +100,9 @@ Setup notes:
 - Opening signature overlay: `LordMonstey Made That`.
 - Visible `Process:` label in the panel header so you can confirm the cleaned dump/process context before trusting the answer.
 - `Mark Review` writes a Monstey review comment and color marker directly at the current AI focus inside IDA.
+- Animated analysis pipeline shows where the current pass is: Focus, Context, Evidence, Provider, LLM, Parse, Enrich, Ready.
+- Non-intrusive status toasts confirm jumps, copies, applies, review marks, errors, and completed workflows.
+- `Review Queue` tab stores marked addresses per dump/process with jump/copy/remove/clear controls.
 - `Dump Context` tab for analyst-provided process, engine, objective, class, global, and naming notes.
 - Pre-analysis hypothesis prompt: tell the AI what you think the function does, or let it analyze solo.
 - Extract assembly, bytes, calls, callers, data refs, strings, comments, and engine hints.
@@ -201,6 +205,11 @@ Setup notes:
   - header badge reinforces `LordMonstey Made`;
   - `Mark Review` button annotates/colors the current AI focus directly in IDA;
   - README includes the live IDA screenshot and links to the IDA Symbiote roadmap.
+- Pleasant workflow pass v0.3.13:
+  - Function tab gains a compact animated analysis pipeline;
+  - status toasts provide lightweight feedback without replacing the summary;
+  - Review Queue persists `Mark Review` addresses in the local per-dump Process Map;
+  - review marks can be jumped to, copied, removed, or cleared.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;

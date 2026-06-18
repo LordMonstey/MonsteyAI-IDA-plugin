@@ -55,6 +55,27 @@ The `AI focus` row shows which address Preview/Analyze will use.
 - `Jump` moves IDA to the current AI focus.
 - `Mark Review` writes a Monstey review comment and color marker directly into the IDB at the current AI focus.
 
+## Review Queue
+
+Every `Mark Review` action is saved in the local per-dump Process Map and appears in the `Review Queue` tab.
+
+- `Jump`: move IDA to the selected mark.
+- `Copy Queue`: copy a compact report for notes or issue reports.
+- `Remove`: remove one selected mark from the queue.
+- `Clear`: clear all marks for the current dump.
+
+The IDA comment/color stays in the IDB until you edit or recolor it manually.
+
+## Pleasant UI Feedback
+
+The Function tab includes a compact animated pipeline:
+
+```text
+Focus -> Context -> Evidence -> Provider -> LLM -> Parse -> Enrich -> Ready
+```
+
+It updates from the live debug trace so you can tell whether Monstey is collecting context, waiting for the provider, parsing JSON, or falling back locally. Completed actions also show a small toast in the lower-right corner of the panel.
+
 ## Agent Mode
 
 `Settings > Agent mode` controls how many analyst roles cooperate on the same shared context:

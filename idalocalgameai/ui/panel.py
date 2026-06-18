@@ -42,7 +42,18 @@ from ..integrations import (
     normalize_integration_text,
     render_integration_preview,
 )
-from ..memory import game_map_path, load_game_map, prompt_memory, render_game_map, upsert_analysis, upsert_feedback
+from ..memory import (
+    clear_review_marks,
+    game_map_path,
+    load_game_map,
+    prompt_memory,
+    remove_review_mark,
+    render_game_map,
+    sorted_review_marks,
+    upsert_analysis,
+    upsert_feedback,
+    upsert_review_mark,
+)
 from ..navigation import clear_focus_lock, install_navigation_hooks, navigation_snapshot, preferred_focus_ea
 from ..pseudodiff import local_pseudocode_diff, render_local_pseudocode_diff_text
 from ..prompts import compact_analysis_context
@@ -294,6 +305,61 @@ class MonsteyMadeOverlay(QtWidgets.QWidget):
         self.anim.start()
 
 
+class StatusToast(QtWidgets.QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self.setObjectName("MonsteyStatusToast")
+        self.setStyleSheet(
+            "QFrame#MonsteyStatusToast { background:#11161b; border:1px solid #40505f; border-radius:6px; }"
+            "QLabel { color:#edf1f5; font-weight:700; padding:7px 10px; }"
+        )
+        self.opacity_effect = QtWidgets.QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+        self.opacity_effect.setOpacity(0.0)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.label = QtWidgets.QLabel("")
+        self.label.setTextFormat(QtCore.Qt.RichText)
+        layout.addWidget(self.label)
+        self.anim = QtCore.QSequentialAnimationGroup(self)
+        fade_in = QtCore.QPropertyAnimation(self.opacity_effect, b"opacity")
+        fade_in.setDuration(130)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(0.96)
+        pause = QtCore.QPauseAnimation(1450)
+        fade_out = QtCore.QPropertyAnimation(self.opacity_effect, b"opacity")
+        fade_out.setDuration(340)
+        fade_out.setStartValue(0.96)
+        fade_out.setEndValue(0.0)
+        self.anim.addAnimation(fade_in)
+        self.anim.addAnimation(pause)
+        self.anim.addAnimation(fade_out)
+        self.anim.finished.connect(self.hide)
+        self.hide()
+
+    def show_message(self, message: str, ok: bool = True) -> None:
+        safe = html.escape(sanitize_text(message, max_chars=180, collapse_ws=True))
+        color = "#8df29b" if ok else "#ff9f9f"
+        self.label.setText("<span style='color:%s;'>%s</span>" % (color, safe))
+        self.adjustSize()
+        self.reposition()
+        self.raise_()
+        self.show()
+        self.anim.stop()
+        self.opacity_effect.setOpacity(0.0)
+        self.anim.start()
+
+    def reposition(self) -> None:
+        parent = self.parentWidget()
+        if parent is not None:
+            margin = 14
+            width = min(max(self.sizeHint().width(), 240), max(260, parent.width() - 40))
+            height = self.sizeHint().height()
+            self.resize(width, height)
+            self.move(max(margin, parent.width() - width - margin), max(margin, parent.height() - height - margin))
+
+
 class MonsteyIDBHooks(IDB_HOOKS_BASE):
     def __init__(self, panel):
         try:
@@ -333,6 +399,10 @@ class MainWidget(QtWidgets.QWidget):
         self.analysis_debug_timer = QtCore.QTimer(self)
         self.analysis_debug_timer.setInterval(1000)
         self.analysis_debug_timer.timeout.connect(self._analysis_debug_tick)
+        self.pipeline_pulse = 0
+        self.pipeline_timer = QtCore.QTimer(self)
+        self.pipeline_timer.setInterval(360)
+        self.pipeline_timer.timeout.connect(self._pipeline_tick)
         self.focus_indicator_timer = QtCore.QTimer(self)
         self.focus_indicator_timer.setInterval(350)
         self.focus_indicator_timer.timeout.connect(self._refresh_focus_indicator)
@@ -351,6 +421,8 @@ class MainWidget(QtWidgets.QWidget):
         self.current_action_kind: Optional[str] = None
         self.action_history = ""
         self.last_action_code = ""
+        self.pipeline_labels = {}
+        self.pipeline_state = {}
         self._build_ui()
         self.focus_indicator_timer.start()
         self._refresh_focus_indicator()
@@ -358,9 +430,11 @@ class MainWidget(QtWidgets.QWidget):
         self._load_dump_context_into_ui()
         self._load_external_evidence_into_ui()
         self._refresh_game_map()
+        self._refresh_review_queue()
         self._set_status("Ready", ok=True)
         self.made_overlay = MonsteyMadeOverlay(self)
         self.made_overlay.hide()
+        self.toast = StatusToast(self)
         QtCore.QTimer.singleShot(260, self._show_made_overlay)
 
     def _build_ui(self) -> None:
@@ -445,6 +519,7 @@ class MainWidget(QtWidgets.QWidget):
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_function_tab(), "Function")
+        self.tabs.addTab(self._build_review_queue_tab(), "Review Queue")
         self.tabs.addTab(self._build_dump_context_tab(), "Dump Context")
         self.tabs.addTab(self._build_external_evidence_tab(), "Evidence Sources")
         self.tabs.addTab(self._build_integrations_tab(), "Integrations")
@@ -465,6 +540,35 @@ class MainWidget(QtWidgets.QWidget):
         self.context_label.setTextFormat(QtCore.Qt.PlainText)
         self.context_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         layout.addWidget(self.context_label)
+
+        self.pipeline_frame = QtWidgets.QFrame()
+        self.pipeline_frame.setObjectName("AnalysisPipeline")
+        self.pipeline_frame.setStyleSheet(
+            "QFrame#AnalysisPipeline { background:#181d22; border:1px solid #303943; border-radius:6px; }"
+        )
+        pipeline_layout = QtWidgets.QHBoxLayout(self.pipeline_frame)
+        pipeline_layout.setContentsMargins(8, 5, 8, 5)
+        pipeline_layout.setSpacing(5)
+        self.pipeline_labels = {}
+        for key, label in [
+            ("focus", "Focus"),
+            ("context", "Context"),
+            ("evidence", "Evidence"),
+            ("provider", "Provider"),
+            ("llm", "LLM"),
+            ("parse", "Parse"),
+            ("enrich", "Enrich"),
+            ("ready", "Ready"),
+        ]:
+            chip = QtWidgets.QLabel(label)
+            chip.setAlignment(QtCore.Qt.AlignCenter)
+            chip.setMinimumWidth(72)
+            chip.setToolTip("Analysis pipeline step: %s" % label)
+            self.pipeline_labels[key] = chip
+            pipeline_layout.addWidget(chip)
+        pipeline_layout.addStretch(1)
+        layout.addWidget(self.pipeline_frame)
+        self._reset_pipeline()
 
         action_row = QtWidgets.QHBoxLayout()
         self.btn_apply_name = QtWidgets.QPushButton("Apply Name")
@@ -534,6 +638,45 @@ class MainWidget(QtWidgets.QWidget):
         splitter.setStretchFactor(1, 2)
         splitter.setStretchFactor(2, 2)
         layout.addWidget(splitter, 1)
+        return tab
+
+    def _build_review_queue_tab(self) -> QtWidgets.QWidget:
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+
+        toolbar = QtWidgets.QHBoxLayout()
+        self.btn_refresh_review_queue = QtWidgets.QPushButton("Refresh")
+        self.btn_jump_review_queue = QtWidgets.QPushButton("Jump")
+        self.btn_copy_review_queue = QtWidgets.QPushButton("Copy Queue")
+        self.btn_remove_review_queue = QtWidgets.QPushButton("Remove")
+        self.btn_clear_review_queue = QtWidgets.QPushButton("Clear")
+        self.review_queue_path_label = QtWidgets.QLabel("")
+        self.review_queue_path_label.setTextFormat(QtCore.Qt.PlainText)
+        self.review_queue_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.btn_refresh_review_queue.clicked.connect(self._refresh_review_queue)
+        self.btn_jump_review_queue.clicked.connect(self._jump_selected_review_mark)
+        self.btn_copy_review_queue.clicked.connect(self._copy_review_queue)
+        self.btn_remove_review_queue.clicked.connect(self._remove_selected_review_mark)
+        self.btn_clear_review_queue.clicked.connect(self._clear_review_queue)
+        toolbar.addWidget(self.btn_refresh_review_queue)
+        toolbar.addWidget(self.btn_jump_review_queue)
+        toolbar.addWidget(self.btn_copy_review_queue)
+        toolbar.addWidget(self.btn_remove_review_queue)
+        toolbar.addWidget(self.btn_clear_review_queue)
+        toolbar.addWidget(self.review_queue_path_label, 1)
+        layout.addLayout(toolbar)
+
+        self.review_queue_table = QtWidgets.QTableWidget(0, 5)
+        self.review_queue_table.setHorizontalHeaderLabels(["Address", "Name", "Status", "Source", "Note"])
+        self.review_queue_table.horizontalHeader().setStretchLastSection(True)
+        self.review_queue_table.verticalHeader().setVisible(False)
+        self.review_queue_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.review_queue_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.review_queue_table.setAlternatingRowColors(True)
+        self.review_queue_table.cellDoubleClicked.connect(lambda row, col: self._jump_review_row(row))
+        layout.addWidget(self.review_queue_table, 1)
         return tab
 
     def _build_action_tab(self) -> QtWidgets.QWidget:
@@ -1427,10 +1570,157 @@ class MainWidget(QtWidgets.QWidget):
         self.game_map_edit.setPlainText(render_game_map(data))
         self.map_path_label.setText(game_map_path(context))
 
+    def _map_context(self) -> Dict[str, Any]:
+        if isinstance(self.current_context, dict) and self.current_context:
+            return self.current_context
+        return {"database": database_context()}
+
+    def _review_rows(self) -> list:
+        data = load_game_map(self._map_context())
+        return sorted_review_marks(data)
+
+    def _refresh_review_queue(self) -> None:
+        if not hasattr(self, "review_queue_table"):
+            return
+        context = self._map_context()
+        rows = sorted_review_marks(load_game_map(context))
+        self.review_queue_table.setRowCount(0)
+        for row_idx, row in enumerate(rows):
+            self.review_queue_table.insertRow(row_idx)
+            values = [
+                row.get("address") or "-",
+                row.get("name") or "-",
+                row.get("status") or "review",
+                row.get("source") or "-",
+                row.get("note") or row.get("line") or "-",
+            ]
+            for col, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                item.setData(QtCore.Qt.UserRole, row.get("address") or "")
+                if col == 0:
+                    item.setForeground(QtGui.QBrush(QtGui.QColor("#9bd7ff")))
+                elif col == 2:
+                    item.setForeground(QtGui.QBrush(QtGui.QColor("#ffd58a")))
+                self.review_queue_table.setItem(row_idx, col, item)
+        self.review_queue_table.resizeColumnsToContents()
+        self.review_queue_path_label.setText("%d review mark(s) | %s" % (len(rows), game_map_path(context)))
+        for button in (
+            self.btn_jump_review_queue,
+            self.btn_copy_review_queue,
+            self.btn_remove_review_queue,
+            self.btn_clear_review_queue,
+        ):
+            button.setEnabled(bool(rows))
+
+    def _selected_review_address(self) -> Optional[str]:
+        if not hasattr(self, "review_queue_table"):
+            return None
+        indexes = self.review_queue_table.selectionModel().selectedRows()
+        if not indexes:
+            return None
+        item = self.review_queue_table.item(indexes[0].row(), 0)
+        if not item:
+            return None
+        return str(item.data(QtCore.Qt.UserRole) or item.text() or "").strip()
+
+    def _jump_review_row(self, row: int) -> None:
+        item = self.review_queue_table.item(row, 0)
+        address = str((item.data(QtCore.Qt.UserRole) if item else "") or (item.text() if item else "") or "")
+        ea = parse_focus_ea(address)
+        if ea is None:
+            self._set_status("Review mark has no valid address", ok=False)
+            return
+        try:
+            ida_kernwin.jumpto(ea)
+            self._set_status("Jumped to review mark 0x%X" % ea, ok=True)
+        except Exception as exc:
+            self._set_status("Review jump failed", ok=False)
+            info("Review jump failed: %s" % exc)
+
+    def _jump_selected_review_mark(self) -> None:
+        address = self._selected_review_address()
+        if not address:
+            self._set_status("Select a review mark first", ok=False)
+            return
+        ea = parse_focus_ea(address)
+        if ea is None:
+            self._set_status("Selected review mark has no valid address", ok=False)
+            return
+        try:
+            ida_kernwin.jumpto(ea)
+            self._set_status("Jumped to review mark 0x%X" % ea, ok=True)
+        except Exception as exc:
+            self._set_status("Review jump failed", ok=False)
+            info("Review jump failed: %s" % exc)
+
+    def _copy_review_queue(self) -> None:
+        rows = self._review_rows()
+        if not rows:
+            self._set_status("Review queue is empty", ok=False)
+            return
+        lines = ["MonsteyAI review queue"]
+        for row in rows:
+            lines.append(
+                "%s | %s | %s | %s"
+                % (
+                    row.get("address") or "-",
+                    row.get("name") or "-",
+                    row.get("status") or "review",
+                    sanitize_text(row.get("note") or "", max_chars=500, collapse_ws=True),
+                )
+            )
+        QtWidgets.QApplication.clipboard().setText("\n".join(lines))
+        self._set_status("Review queue copied", ok=True)
+
+    def _remove_selected_review_mark(self) -> None:
+        address = self._selected_review_address()
+        if not address:
+            self._set_status("Select a review mark first", ok=False)
+            return
+        remove_review_mark(self._map_context(), address)
+        self._refresh_review_queue()
+        self._refresh_game_map()
+        self._set_status("Review mark removed", ok=True)
+
+    def _clear_review_queue(self) -> None:
+        answer = QtWidgets.QMessageBox.question(self, PLUGIN_NAME, "Clear all review marks for this dump?")
+        if answer != QtWidgets.QMessageBox.Yes:
+            return
+        clear_review_marks(self._map_context())
+        self._refresh_review_queue()
+        self._refresh_game_map()
+        self._set_status("Review queue cleared", ok=True)
+
     def _set_status(self, text: str, ok: bool = True) -> None:
         color = "#8df29b" if ok else "#ff8c8c"
         safe_text = html.escape(sanitize_text(text, max_chars=900, collapse_ws=True))
         self.status_label.setText('<span style="color:%s; font-weight:600">%s</span> | %s' % (color, safe_text, QT_BINDING))
+        if self._should_toast_status(text):
+            self._show_toast(text, ok=ok)
+
+    def _should_toast_status(self, text: str) -> bool:
+        value = str(text or "").strip()
+        if not value or value == "Ready":
+            return False
+        low = value.lower()
+        noisy = (
+            "analyzing with",
+            "collecting ida context",
+            "testing llm",
+            "action chat",
+            "pseudo diff ai",
+            "provider timeout threshold",
+        )
+        if any(part in low for part in noisy):
+            return False
+        if low.endswith("..."):
+            return False
+        return True
+
+    def _show_toast(self, text: str, ok: bool = True) -> None:
+        toast = getattr(self, "toast", None)
+        if toast is not None:
+            toast.show_message(text, ok=ok)
 
     def resizeEvent(self, event) -> None:
         try:
@@ -1440,6 +1730,9 @@ class MainWidget(QtWidgets.QWidget):
         overlay = getattr(self, "made_overlay", None)
         if overlay is not None:
             overlay.setGeometry(self.rect())
+        toast = getattr(self, "toast", None)
+        if toast is not None and toast.isVisible():
+            toast.reposition()
 
     def _show_made_overlay(self) -> None:
         overlay = getattr(self, "made_overlay", None)
@@ -1578,7 +1871,24 @@ class MainWidget(QtWidgets.QWidget):
         if line:
             note += " Focus line: %s" % line
         result = mark_review_item(ea, note)
+        try:
+            name = str(ida_name.get_name(ea) or "").strip()
+        except Exception:
+            name = ""
+        upsert_review_mark(
+            self._map_context(),
+            {
+                "address": "0x%X" % ea,
+                "name": name,
+                "source": source,
+                "status": "review",
+                "note": note,
+                "line": line,
+            },
+        )
         refresh_ida()
+        self._refresh_review_queue()
+        self._refresh_game_map()
         self._set_status(result.get("message", "Marked review point"), ok=bool(result.get("ok")))
         info(result.get("message", "Marked review point"))
 
@@ -1967,12 +2277,86 @@ class MainWidget(QtWidgets.QWidget):
         self.pseudodiff_result.clear()
         self.pseudodiff_last_text = ""
 
+    def _pipeline_style(self, state: str, active: bool = False) -> str:
+        colors = {
+            "pending": ("#20252a", "#3a424c", "#7f8994"),
+            "run": ("#1d2b36", "#4a6b84", "#9bd7ff"),
+            "ok": ("#182820", "#346b4c", "#8df29b"),
+            "warn": ("#302a19", "#705d2d", "#ffd58a"),
+            "error": ("#301d21", "#6b3944", "#ff9f9f"),
+        }
+        bg, border, fg = colors.get(state, colors["pending"])
+        if active:
+            border = "#9bd7ff" if state == "run" else border
+        return (
+            "padding:4px 7px; border:1px solid %s; border-radius:5px; "
+            "background:%s; color:%s; font-weight:700;"
+            % (border, bg, fg)
+        )
+
+    def _reset_pipeline(self) -> None:
+        self.pipeline_state = {}
+        for key, label in getattr(self, "pipeline_labels", {}).items():
+            self.pipeline_state[key] = "pending"
+            label.setStyleSheet(self._pipeline_style("pending"))
+        try:
+            self.pipeline_timer.stop()
+        except Exception:
+            pass
+
+    def _set_pipeline_step(self, key: str, state: str) -> None:
+        if key not in getattr(self, "pipeline_labels", {}):
+            return
+        self.pipeline_state[key] = state
+        self.pipeline_labels[key].setStyleSheet(self._pipeline_style(state, active=(state == "run")))
+        if any(value == "run" for value in self.pipeline_state.values()):
+            if not self.pipeline_timer.isActive():
+                self.pipeline_timer.start()
+        else:
+            self.pipeline_timer.stop()
+
+    def _pipeline_tick(self) -> None:
+        self.pipeline_pulse = (int(getattr(self, "pipeline_pulse", 0)) + 1) % 2
+        for key, state in getattr(self, "pipeline_state", {}).items():
+            label = self.pipeline_labels.get(key)
+            if label is not None:
+                label.setStyleSheet(self._pipeline_style(state, active=(state == "run" and self.pipeline_pulse == 1)))
+
+    def _pipeline_from_log(self, message: str, level: str) -> None:
+        low = str(message or "").lower()
+        if "run #" in low and "started" in low:
+            self._set_pipeline_step("focus", "run")
+        if "collecting focused ida context" in low:
+            self._set_pipeline_step("focus", "ok")
+            self._set_pipeline_step("context", "run")
+        elif "ida context ready" in low:
+            self._set_pipeline_step("context", "ok")
+        elif "external evidence" in low or "process/dump context" in low or "evidence pack" in low:
+            self._set_pipeline_step("evidence", "ok" if level != "warn" else "warn")
+        elif "provider ready" in low or "worker started" in low:
+            self._set_pipeline_step("provider", "ok")
+            self._set_pipeline_step("llm", "run")
+        elif "sending chat/completions" in low or "waiting for" in low:
+            self._set_pipeline_step("llm", "run")
+        elif "llm response received" in low:
+            self._set_pipeline_step("llm", "ok")
+            self._set_pipeline_step("parse", "run")
+        elif "json parse failed" in low or "repair" in low:
+            self._set_pipeline_step("parse", "warn")
+        elif "parsing json" in low:
+            self._set_pipeline_step("parse", "run")
+        elif "local semantic" in low or "fallback" in low or "enrichment" in low:
+            self._set_pipeline_step("enrich", "warn" if level in ("warn", "error") else "ok")
+        elif "analysis ready" in low or "quick local pass" in low:
+            self._set_pipeline_step("ready", "ok")
+
     def _reset_analysis_log(self) -> None:
         self.analysis_log_lines = []
         self.analysis_started_at = time.perf_counter()
         self.analysis_log_last_tick = -1
         self.analysis_timeout_last_warn = -1
         self.analysis_log_active = True
+        self._reset_pipeline()
         self._show_debug_trace()
 
     def _append_analysis_log(self, message: str, level: str = "info") -> None:
@@ -1985,6 +2369,7 @@ class MainWidget(QtWidgets.QWidget):
             pass
         if not bool(getattr(self, "analysis_log_active", False)):
             return
+        self._pipeline_from_log(text, level)
         self.analysis_log_lines.append({
             "time": time.strftime("%H:%M:%S"),
             "level": level,
@@ -2379,6 +2764,9 @@ class MainWidget(QtWidgets.QWidget):
         timeout_seconds = self._analysis_watchdog_seconds()
         reason = "Gemini/local provider did not finish within %d seconds; showing local semantic fallback and ignoring late model output." % timeout_seconds
         self._append_analysis_log(reason, "warn")
+        self._set_pipeline_step("llm", "warn")
+        self._set_pipeline_step("parse", "warn")
+        self._set_pipeline_step("enrich", "run")
         self._stop_analysis_debug_timer()
         analysis = self._local_analysis_from_context(ctx, "local_timeout_fallback", reason, risk=reason, local_only=True)
         raw = json.dumps(analysis, indent=2, sort_keys=True)
@@ -2465,6 +2853,10 @@ class MainWidget(QtWidgets.QWidget):
 
     def _on_analysis_ok(self, analysis: Dict[str, Any], raw: str) -> None:
         self._stop_analysis_debug_timer()
+        self._set_pipeline_step("llm", "ok" if str(analysis.get("mode") or "").lower() not in ("local_timeout_fallback", "local_quick", "data") else self.pipeline_state.get("llm", "pending"))
+        self._set_pipeline_step("parse", "ok" if str(analysis.get("mode") or "").lower() not in ("local_timeout_fallback", "local_quick", "data") else self.pipeline_state.get("parse", "pending"))
+        self._set_pipeline_step("enrich", "ok")
+        self._set_pipeline_step("ready", "ok")
         self.current_analysis = analysis
         try:
             path = upsert_analysis(self.current_context or {}, analysis)
@@ -2533,6 +2925,9 @@ class MainWidget(QtWidgets.QWidget):
 
     def _on_analysis_failed(self, message: str) -> None:
         self._stop_analysis_debug_timer()
+        self._set_pipeline_step("llm", "error")
+        self._set_pipeline_step("parse", "error")
+        self._set_pipeline_step("ready", "error")
         self._set_status("Analysis error", ok=False)
         self.summary_edit.setPlainText(message)
         info(message)
