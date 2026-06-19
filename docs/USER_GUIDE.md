@@ -234,6 +234,8 @@ Evidence rows are color-coded by kind: strings, assembly, xrefs, calls, imports,
 
 Click an address in the `Address` column, or double-click a row, to jump directly to that location in IDA.
 
+The analysis report is interactive as well: in `XREF Evidence Map`, click a caller, callee, current function, or ranked next XREF target to jump to that function/address in IDA. Monstey also moves the focus marker there when focus highlighting is enabled.
+
 ## IDA Comments And Colors
 
 `Apply Comments + Colors` writes the analysis back into IDA:

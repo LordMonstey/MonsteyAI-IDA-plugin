@@ -622,9 +622,12 @@ class MainWidget(QtWidgets.QWidget):
         self.summary_edit = QtWidgets.QTextBrowser()
         self.summary_edit.setReadOnly(True)
         self.summary_edit.setOpenExternalLinks(False)
+        self.summary_edit.setOpenLinks(False)
         self.summary_edit.setTextInteractionFlags(
             QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
+            | QtCore.Qt.LinksAccessibleByMouse | QtCore.Qt.LinksAccessibleByKeyboard
         )
+        self.summary_edit.anchorClicked.connect(self._on_summary_anchor_clicked)
         self.summary_edit.setPlaceholderText("Analysis summary")
 
         self.evidence_table = QtWidgets.QTableWidget(0, 3)
@@ -3892,13 +3895,17 @@ class MainWidget(QtWidgets.QWidget):
             center = {}
 
         def node_card(node: Dict[str, Any], color: str) -> str:
+            label = str(node.get("label") or "unknown")
+            address = str(node.get("address") or "")
+            label_html = self._jump_link(address or label, label, color)
+            address_html = self._jump_link(address or label, address, "#9aa7b2") if address else ""
             return (
                 "<div style='margin:4px 0; padding:6px; background:#20252a; border:1px solid #333b44; border-left:3px solid %s;'>"
                 "<div style='font-weight:700;'>%s</div><div style='color:#7f8994;'>%s</div>%s</div>"
                 % (
                     color,
-                    html.escape(str(node.get("label") or "unknown")),
-                    html.escape(str(node.get("address") or "")),
+                    label_html,
+                    address_html,
                     self._chip("Score", node.get("score") or 0, color),
                 )
             )
@@ -3918,8 +3925,16 @@ class MainWidget(QtWidgets.QWidget):
                         "<div style='margin:4px 0; padding-left:8px; border-left:2px solid %s;'>%s %s - %s</div>"
                         % (
                             self._score_color(target.get("score") or 0),
-                            html.escape(str(target.get("function") or "unknown")),
-                            html.escape(str(target.get("address") or "")),
+                            self._jump_link(
+                                str(target.get("address") or target.get("function") or ""),
+                                str(target.get("function") or "unknown"),
+                                "#edf1f5",
+                            ),
+                            self._jump_link(
+                                str(target.get("address") or target.get("function") or ""),
+                                str(target.get("address") or ""),
+                                "#9aa7b2",
+                            ),
                             html.escape(str(target.get("reason") or "")),
                         )
                     )
@@ -4225,13 +4240,56 @@ class MainWidget(QtWidgets.QWidget):
         info("Saved generated code: %s" % path)
 
     def _extract_address(self, text: Any) -> Optional[int]:
-        match = re.search(r"0x[0-9A-Fa-f]+", str(text or ""))
+        value = str(text or "")
+        match = re.search(r"0x[0-9A-Fa-f]+", value)
+        if not match:
+            match = re.search(r"\b(?:sub|loc|off|byte|word|dword|qword|unk|stru|asc)_([0-9A-Fa-f]{6,16})\b", value)
         if not match:
             return None
         try:
-            return int(match.group(0), 16)
+            return int(match.group(1) if match.lastindex else match.group(0), 16)
         except Exception:
             return None
+
+    def _jump_link(self, address_source: Any, label: Any, color: str) -> str:
+        text = str(label or "").strip()
+        if not text:
+            return ""
+        ea = self._extract_address(address_source)
+        if ea is None:
+            return html.escape(text)
+        return (
+            "<a href='monstey://jump?ea=0x%X' "
+            "style='color:%s; text-decoration:underline; font-weight:700;' "
+            "title='Jump to 0x%X in IDA'>%s</a>"
+            % (ea, color, ea, html.escape(text))
+        )
+
+    def _jump_to_address(self, ea: int, source: str = "report") -> bool:
+        try:
+            ida_kernwin.jumpto(int(ea))
+            if bool(getattr(self, "focus_highlight_enabled", True)):
+                try:
+                    set_focus_marker(int(ea))
+                    self._last_focus_marker_ea = int(ea)
+                except Exception:
+                    pass
+            self._set_status("Jumped to %s 0x%X" % (source, int(ea)), ok=True)
+            return True
+        except Exception as exc:
+            self._set_status("Jump failed", ok=False)
+            info("Jump failed: %s" % exc)
+            return False
+
+    def _on_summary_anchor_clicked(self, url: QtCore.QUrl) -> None:
+        raw = url.toString()
+        if not raw.startswith("monstey://jump"):
+            return
+        ea = self._extract_address(raw)
+        if ea is None:
+            self._set_status("Report link has no valid IDA address", ok=False)
+            return
+        self._jump_to_address(ea, "report")
 
     def _jump_to_evidence_row(self, row: int) -> None:
         for col in (1, 2, 0):
@@ -4243,14 +4301,8 @@ class MainWidget(QtWidgets.QWidget):
                 address = self._extract_address(item.text())
             if address is None:
                 continue
-            try:
-                ida_kernwin.jumpto(int(address))
-                self._set_status("Jumped to 0x%X" % int(address), ok=True)
-                return
-            except Exception as exc:
-                self._set_status("Jump failed", ok=False)
-                info("Jump failed: %s" % exc)
-                return
+            self._jump_to_address(int(address), "evidence")
+            return
 
     def _on_evidence_cell_clicked(self, row: int, col: int) -> None:
         if col == 1:

@@ -24,7 +24,7 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **Optional analysis toolchain:** a separate sidecar can use Capstone, LIEF, YARA, Unicorn, Miasm, angr, and manually installed Triton without importing heavy libraries into IDAPython.
 - **Automatic sidecar scouts:** suspicious ASM/obfuscation contexts can trigger the right sidecar scout during analysis, before the Evidence Pack and LLM prompt are built.
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
-- **IDA symbiote actions:** Monstey can jump to the exact AI focus, highlight it, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
+- **IDA symbiote actions:** Monstey can jump to the exact AI focus, jump from XREF report cards, highlight addresses, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
 - **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
 - **Pleasant workflow layer:** animated analysis pipeline, lightweight status toasts, and a persistent Review Queue make long LLM passes easier to follow.
 - **Local-first but provider-flexible:** Ollama/LM Studio/vLLM or Gemini hosted through an OpenAI-compatible API.
@@ -157,7 +157,7 @@ Setup notes:
 - Dedicated `Trainer Radar` popup window renders the trainer/modding workspace in a larger copyable view.
 - `Trainer Candidates` ranks the current function plus nearby callers/callees as practical hook/mapping candidates.
 - `Hook Experiments` generates observe/log/compare/mutation-gated experiment plans that are reused by Action Lab.
-- `XREF Evidence Map` shows callers/current/callees with scores and recommended next XREF targets.
+- `XREF Evidence Map` shows callers/current/callees with scores and recommended next XREF targets; function names and addresses are clickable and jump directly into IDA.
 - `Structure Hypotheses` converts offset evidence into small pseudo-struct previews for mapping input/output objects.
 - Action Lab now seeds call/hook prompts from the Trainer Radar strategy, next move, and log-first fields instead of generic text.
 - `Feedback` tab stores analyst corrections per function/address, including corrected name, role, usefulness, strategy, and notes.
@@ -394,7 +394,7 @@ Right-click workflow:
 3. Choose `MonsteyAI-Analyse`.
 4. The plugin opens and forwards the selection/focus to the local model.
 
-Evidence addresses in the table are clickable. Click the `Address` column or double-click a row to jump to that address in IDA.
+Evidence addresses in the table are clickable. Click the `Address` column or double-click a row to jump to that address in IDA. In the analysis report, `XREF Evidence Map` caller/current/callee cards and next-target entries are clickable too.
 
 ### Dump Context
 

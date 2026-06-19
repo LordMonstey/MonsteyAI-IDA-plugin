@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.17 - Interactive XREF report navigation
+
+### Highlights
+
+- `XREF Evidence Map` function names and addresses are now clickable inside the analysis report.
+- Clicking a caller, callee, current function, or ranked next XREF target jumps directly to that address in IDA.
+- Report jumps also refresh the Monstey focus marker when focus highlighting is enabled.
+- Address extraction now recognizes IDA-style names such as `sub_7FF...`, `loc_7FF...`, and `qword_7FF...` in addition to `0x...`.
+
 ## v0.3.16 - Automatic sidecar scouts
 
 ### Highlights
