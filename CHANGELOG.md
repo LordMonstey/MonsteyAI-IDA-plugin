@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.18 - Evidence-specific trainer wording
+
+### Highlights
+
+- Removed repeated generic hook-effect fallback wording from trainer/modding analysis.
+- `Hook effect` now rebuilds from concrete local cues when the model is vague: output slots, offsets, numeric ops, reader calls, mode selectors, dirty masks, bitwise ops, callers, and user hints.
+- Trainer Radar filters generic observe-only text before rendering and replaces it with evidence-specific guidance.
+- Prompt instructions now explicitly reject vague "call frequency / useful path" hook answers.
+- Empty Radar panel fallbacks now explain what concrete evidence is missing and what to inspect next.
+
 ## v0.3.17 - Interactive XREF report navigation
 
 ### Highlights

@@ -236,6 +236,12 @@ Click an address in the `Address` column, or double-click a row, to jump directl
 
 The analysis report is interactive as well: in `XREF Evidence Map`, click a caller, callee, current function, or ranked next XREF target to jump to that function/address in IDA. Monstey also moves the focus marker there when focus highlighting is enabled.
 
+## Evidence-Specific Trainer Guidance
+
+Trainer Radar avoids generic hook advice. If the model gives vague text, Monstey filters it and rebuilds `Hook effect`, `Good for`, and experiments from local cues such as output writes, offsets, reader calls, mode selectors, dirty masks, bitwise operations, callers, strings, and analyst hints.
+
+When there is not enough evidence, the Radar should say what is missing and where to inspect next instead of pretending the current function is useful.
+
 ## IDA Comments And Colors
 
 `Apply Comments + Colors` writes the analysis back into IDA:

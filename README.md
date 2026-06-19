@@ -24,6 +24,7 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **Optional analysis toolchain:** a separate sidecar can use Capstone, LIEF, YARA, Unicorn, Miasm, angr, and manually installed Triton without importing heavy libraries into IDAPython.
 - **Automatic sidecar scouts:** suspicious ASM/obfuscation contexts can trigger the right sidecar scout during analysis, before the Evidence Pack and LLM prompt are built.
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
+- **Evidence-specific trainer guidance:** vague hook text is filtered and rebuilt from concrete IDA cues such as output slots, offsets, reader widths, mode selectors, dirty masks, callers, strings, and bitwise operations.
 - **IDA symbiote actions:** Monstey can jump to the exact AI focus, jump from XREF report cards, highlight addresses, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
 - **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
 - **Pleasant workflow layer:** animated analysis pipeline, lightweight status toasts, and a persistent Review Queue make long LLM passes easier to follow.
@@ -243,6 +244,10 @@ Setup notes:
   - sidecar evidence is merged before Evidence Pack and prompt construction, so the model can cite it normally;
   - Debug Trace shows trigger/skip reason, selected scout, timeout, row count, and timing;
   - Settings includes `Sidecar scouts` to toggle the automation.
+- Evidence-specific trainer wording v0.3.18:
+  - repeated generic hook-effect wording is filtered out;
+  - `Hook effect`, `Good for`, and experiments are rebuilt from concrete local cues when the model is vague;
+  - empty Radar fallbacks now tell you what evidence is missing and where to inspect next.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;

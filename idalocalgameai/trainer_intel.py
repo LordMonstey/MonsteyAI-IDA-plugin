@@ -37,6 +37,58 @@ def _append_unique(items: List[Any], value: Any, limit: int = 12) -> None:
     del items[limit:]
 
 
+GENERIC_TRAINER_LINES = (
+    "hooking should mostly confirm call frequency",
+    "whether this helper sits on a useful path",
+    "confirm call frequency, arguments",
+    "run observe-only logging",
+    "fast triage: call frequency",
+)
+
+
+def _is_generic_trainer_line(value: Any) -> bool:
+    text = _clean(value, 420).lower()
+    return not text or any(pattern in text for pattern in GENERIC_TRAINER_LINES)
+
+
+def _filter_generic(items: Any) -> List[str]:
+    return [_clean(item, 220) for item in _as_list(items) if not _is_generic_trainer_line(item)]
+
+
+def _first_cue_line(cues: Dict[str, Any], key: str, limit: int = 140) -> str:
+    for item in _as_list(cues.get(key)):
+        if isinstance(item, dict):
+            value = item.get("line") or item.get("text") or item.get("value") or item.get("meaning") or ""
+            if value:
+                return _clean(value, limit)
+        elif item:
+            return _clean(item, limit)
+    return ""
+
+
+def _slot_labels(cues: Dict[str, Any], limit: int = 3) -> str:
+    labels: List[str] = []
+    for item in _as_list(cues.get("output_layout_writes")):
+        if not isinstance(item, dict):
+            continue
+        base = _clean(item.get("base") or "out", 32)
+        offset = _clean(item.get("offset_or_index") or item.get("offset") or "?", 32)
+        label = "%s[%s]" % (base, offset)
+        if label not in labels:
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return ", ".join(labels)
+
+
+def _first_caller(context: Dict[str, Any]) -> str:
+    xrefs = _as_dict(context.get("xrefs"))
+    for item in _as_list(xrefs.get("callers")):
+        if isinstance(item, dict):
+            return _clean(item.get("function") or item.get("address") or "", 96)
+    return ""
+
+
 def _contains_any(text: str, tokens: Tuple[str, ...]) -> bool:
     low = text.lower()
     return any(token in low for token in tokens)
@@ -200,7 +252,50 @@ def _next_move_for(analysis: Dict[str, Any], context: Dict[str, Any]) -> str:
         return "Inspect the best caller and check whether it owns the gameplay value contract."
     if strategy == "hook_callee":
         return "Inspect the callee primitive before choosing the mutation surface."
-    return "Run observe-only logging: call count, caller address, args, return, touched fields."
+    if _as_list(cues.get("output_layout_writes")):
+        return "Log the detected output slots before/after the original call, then test whether the caller consumes those exact fields."
+    if _as_list(cues.get("mode_checks")):
+        return "Group logs by selector/mode value before deciding which branch is trainer-facing."
+    if _as_list(cues.get("dirty_masks")):
+        return "Trace the code that reacts to the dirty/update mask before mutating the producer."
+    if _as_list(cues.get("bitwise_or_checksum_ops")):
+        return "Classify the bitwise path as decode/hash/sanity-check before treating it as gameplay logic."
+    caller = _first_caller(context)
+    if caller:
+        return "Open caller `%s` and validate whether it owns the useful value contract." % caller
+    return "Classify this helper with a no-mutation hook, then move to the caller/callee that owns a concrete value."
+
+
+def _fallback_hook_effects(category: str, strategy: str, surface: str, cues: Dict[str, Any], context: Dict[str, Any]) -> List[str]:
+    slots = _slot_labels(cues)
+    caller = _first_caller(context)
+    category_low = str(category or "").lower()
+    surface_low = str(surface or "").lower()
+    out: List[str] = []
+    if _as_list(cues.get("likely_reader_calls")) or category_low in ("network", "identity", "parser", "structured parser"):
+        reader = _first_cue_line(cues, "likely_reader_calls")
+        out.append("Expect structured reads and output-field population%s; use this as a field mapper before mutation." % ((" around `%s`" % reader) if reader else ""))
+    elif _as_list(cues.get("output_layout_writes")) and _as_list(cues.get("numeric_ops")):
+        op = _first_cue_line(cues, "numeric_ops")
+        out.append("Expect numeric values to be computed and written into %s%s." % (slots or "detected output slots", ("; cue: `%s`" % op) if op else ""))
+        out.append("If the caller consumes %s directly, post-original output mutation is the first candidate surface." % (slots or "those output slots"))
+    elif category_low in ("damage", "stat") and _as_list(cues.get("numeric_ops")):
+        op = _first_cue_line(cues, "numeric_ops")
+        out.append("Expect calls to line up with controlled damage/stat events and reveal which argument, return value, or nearby float changes%s." % (("; cue: `%s`" % op) if op else ""))
+    elif _as_list(cues.get("dirty_masks")):
+        out.append("Expect update/dirty-mask transitions; the better hook may be the consumer that reacts to that flag.")
+    elif _as_list(cues.get("mode_checks")):
+        out.append("Expect selector-dependent behavior; group logs by mode before choosing a mutation branch.")
+    elif _as_list(cues.get("bitwise_or_checksum_ops")):
+        out.append("Expect decode/hash/sanity-check behavior; mutation is unsafe until the checked value and consumer are identified.")
+    elif surface_low not in ("", "none", "unknown"):
+        out.append("Expect evidence around the `%s` surface; validate it with baseline logs before a controlled change." % surface_low)
+    else:
+        target = caller or _clean(context.get("function_name") or context.get("start_ea") or "this target", 96)
+        out.append("Expect hook logs to classify `%s`; if no value is touched, move to the caller/callee rather than forcing a mutation here." % target)
+    if caller and not any(caller.lower() in item.lower() for item in out):
+        out.append("Use caller `%s` as the first interpretation anchor for the hook log." % caller)
+    return out[:4]
 
 
 def _build_radar(analysis: Dict[str, Any], context: Dict[str, Any], candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -220,11 +315,13 @@ def _build_radar(analysis: Dict[str, Any], context: Dict[str, Any], candidates: 
         tags.append("trace-needed")
     if surface not in ("none", "unknown", ""):
         tags.append(surface)
-    hook_effects = [_clean(item, 180) for item in _as_list(trainer.get("what_happens_if_hooked"))[:4]]
+    hook_effects = _filter_generic(trainer.get("what_happens_if_hooked"))[:4]
     log_first = [_clean(item, 180) for item in _as_list(trainer.get("values_to_log_first"))[:5]]
     good_for = [_clean(item, 180) for item in _as_list(trainer.get("candidate_trainer_features"))[:4]]
     not_for = [_clean(item, 180) for item in _as_list(trainer.get("not_useful_for"))[:4]]
-    experiments = [_clean(item, 180) for item in _as_list(trainer.get("recommended_experiments"))[:4]]
+    experiments = _filter_generic(trainer.get("recommended_experiments"))[:4]
+    if not hook_effects:
+        hook_effects = _fallback_hook_effects(category, strategy, surface, cues, context)
     if not good_for:
         good_for = _fallback_good_for(usefulness, category, strategy, surface, cues, context)
     if not not_for:
@@ -293,9 +390,11 @@ def _fallback_good_for(
     if _as_list(_as_dict(context.get("xrefs")).get("callers")):
         out.append("Ranking callers to find the gameplay-level function that owns the useful value.")
     if not out:
+        caller = _first_caller(context)
         out = [
-            "Fast triage: call frequency, caller map, arguments, return value, and touched fields.",
-            "Deciding whether this function is a hook target or only a helper to trace through.",
+            "Classifying whether `%s` is a real hook target or only a helper to trace through."
+            % (caller or _clean(context.get("function_name") or context.get("start_ea") or "this target", 96)),
+            "Building the minimum caller/callee map needed before spending time on a mutation experiment.",
         ]
     deduped: List[str] = []
     for item in out:
@@ -478,9 +577,22 @@ def _build_structure_hypotheses(analysis: Dict[str, Any], context: Dict[str, Any
 def _build_hook_experiments(analysis: Dict[str, Any], context: Dict[str, Any], radar: Dict[str, Any]) -> List[Dict[str, Any]]:
     experiments = []
     log_first = radar.get("log_first") or []
+    cues = _as_dict(context.get("semantic_cues"))
+    slots = _slot_labels(cues)
+    caller = _first_caller(context)
+    if slots:
+        observe_intent = "Validate the detected output slots (%s) and whether the caller consumes them directly." % slots
+    elif _as_list(cues.get("likely_reader_calls")):
+        observe_intent = "Map structured reader calls into concrete output fields before considering any mutation."
+    elif _as_list(cues.get("mode_checks")):
+        observe_intent = "Separate behavior by selector/mode so the correct branch can be mapped."
+    elif caller:
+        observe_intent = "Use caller `%s` to decide whether this target owns a trainer-facing value." % caller
+    else:
+        observe_intent = "Classify this target with no mutation and move to the nearest value-owning caller/callee if needed."
     experiments.append({
         "title": "Observe-only hook",
-        "intent": "Confirm call frequency, caller, live arguments, return value, and touched fields before modifying anything.",
+        "intent": observe_intent,
         "steps": [
             "Install a MinHook __fastcall detour and immediately call the original.",
             "Log _ReturnAddress(), arguments, return value, and the first stable output fields.",

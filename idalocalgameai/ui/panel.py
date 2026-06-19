@@ -3776,9 +3776,9 @@ class MainWidget(QtWidgets.QWidget):
             "<tr>%s%s</tr><tr>%s%s</tr></table>"
             % (
                 rows("Hook effect", radar.get("hook_effect"), "#ffd58a", "Hook effect not known yet."),
-                rows("Log first", radar.get("log_first"), "#98f0df", "Log args, caller, return and output fields."),
-                rows("Good for", radar.get("good_for"), "#9af2b2", "No supported trainer outcome yet."),
-                rows("Experiments", radar.get("experiments"), "#9bd7ff", "Observe-only hook first."),
+                rows("Log first", radar.get("log_first"), "#98f0df", "Log the nearest concrete cue: caller, args, return, output slot, mode selector, or touched field."),
+                rows("Good for", radar.get("good_for"), "#9af2b2", "No concrete trainer outcome proven yet; use XREFs or field mapping to find the value-owning code."),
+                rows("Experiments", radar.get("experiments"), "#9bd7ff", "Run a no-mutation classification hook, then move to the caller/callee/output surface with evidence."),
             )
         )
         return title + header + bar + table

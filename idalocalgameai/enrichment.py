@@ -13,6 +13,14 @@ from typing import Any, Dict, Iterable, List, Optional
 
 BLANK_STRINGS = {"", "-", "unknown", "none", "n/a", "null"}
 
+GENERIC_TRAINER_LINES = (
+    "hooking should mostly confirm call frequency",
+    "whether this helper sits on a useful path",
+    "confirm call frequency, arguments",
+    "run observe-only logging: call count",
+    "fast triage: call frequency",
+)
+
 
 def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
@@ -53,6 +61,105 @@ def _append_unique(items: List[Any], value: Any, limit: int = 24) -> bool:
     if len(items) > limit:
         del items[limit:]
     return True
+
+
+def _is_generic_trainer_line(value: Any) -> bool:
+    text = _clean(value, 700).lower()
+    if not text:
+        return True
+    return any(pattern in text for pattern in GENERIC_TRAINER_LINES)
+
+
+def _replace_generic_items(items: List[Any]) -> List[Any]:
+    return [item for item in items if not _is_generic_trainer_line(item)]
+
+
+def _first_cue_line(cues: Dict[str, Any], key: str, limit: int = 150) -> str:
+    for item in _as_list(cues.get(key)):
+        if isinstance(item, dict):
+            line = item.get("line") or item.get("text") or item.get("value") or item.get("meaning") or ""
+            if line:
+                return _clean(line, limit)
+        elif item:
+            return _clean(item, limit)
+    return ""
+
+
+def _slot_labels(cues: Dict[str, Any], max_items: int = 3) -> str:
+    labels: List[str] = []
+    for item in _as_list(cues.get("output_layout_writes")):
+        if not isinstance(item, dict):
+            continue
+        base = _clean(item.get("base") or "out", 32)
+        offset = _clean(item.get("offset_or_index") or item.get("offset") or "?", 32)
+        label = "%s[%s]" % (base, offset)
+        if label not in labels:
+            labels.append(label)
+        if len(labels) >= max_items:
+            break
+    return ", ".join(labels)
+
+
+def _caller_hint(context: Dict[str, Any]) -> str:
+    xrefs = _as_dict(context.get("xrefs"))
+    callers = [item for item in _as_list(xrefs.get("callers")) if isinstance(item, dict)]
+    if not callers:
+        return ""
+    first = callers[0]
+    return _clean(first.get("function") or first.get("address") or "", 96)
+
+
+def _specific_hook_effects(
+    category: str,
+    cues: Dict[str, Any],
+    context: Dict[str, Any],
+    readers: bool,
+    output_writes: bool,
+    numeric_ops: bool,
+    mode_checks: bool,
+    dirty_masks: bool,
+    bitwise: bool,
+) -> List[str]:
+    hint = _hint_text(context)
+    caller = _caller_hint(context)
+    slots = _slot_labels(cues)
+    out: List[str] = []
+    if category == "identity":
+        out.append("Hooking should show identity/name parsing and output structure population; use XREF consumers to connect parsed identity to runtime entities.")
+        out.append("Changing data here is more likely to break identity/state parsing than produce a trainer-facing stat change.")
+    elif readers:
+        reader_line = _first_cue_line(cues, "likely_reader_calls")
+        detail = (" around `%s`" % reader_line) if reader_line else ""
+        out.append("Hooking should reveal structured stream reads%s and the exact output fields populated from the stream." % detail)
+        out.append("The useful result is a field map; mutate only after a caller or consumer proves which parsed field affects gameplay.")
+    elif output_writes and numeric_ops:
+        slot_text = slots or "the detected output slots"
+        op_line = _first_cue_line(cues, "numeric_ops")
+        out.append("Hooking should expose numeric values before they land in %s%s." % (slot_text, ("; cue: `%s`" % op_line) if op_line else ""))
+        out.append("If the caller consumes %s directly, a gated post-original write is the first mutation surface to test." % slot_text)
+    elif category == "damage" and numeric_ops:
+        op_line = _first_cue_line(cues, "numeric_ops")
+        out.append("Hooking should correlate calls with controlled damage received/done events and reveal which argument/return/nearby float changes%s." % (("; cue: `%s`" % op_line) if op_line else ""))
+        out.append("Separate callers before mutation so received-damage and dealt-damage paths are not mixed.")
+    elif output_writes:
+        slot_text = slots or "the detected output fields"
+        out.append("Hooking should show when %s are populated and whether the caller reads them immediately after the call." % slot_text)
+    elif dirty_masks:
+        mask_line = _first_cue_line(cues, "dirty_masks")
+        out.append("Hooking should show state/update-mask transitions%s; the valuable target is probably the code that reacts to the dirty flag." % (("; cue: `%s`" % mask_line) if mask_line else ""))
+    elif mode_checks:
+        mode_line = _first_cue_line(cues, "mode_checks")
+        out.append("Hooking should let you group behavior by selector/mode%s, then map which mode means replace/add/multiply/clamp." % (("; cue: `%s`" % mode_line) if mode_line else ""))
+    elif bitwise:
+        bit_line = _first_cue_line(cues, "bitwise_or_checksum_ops")
+        out.append("Hooking should validate whether the bitwise path is decoding, hashing, or sanity checking%s before treating it as gameplay logic." % (("; cue: `%s`" % bit_line) if bit_line else ""))
+    else:
+        target = caller or _clean(context.get("function_name") or context.get("start_ea") or "this helper", 96)
+        hint_suffix = (" against your hint `%s`" % _clean(hint, 80)) if hint else ""
+        out.append("Hooking should classify `%s`%s: log caller, arguments, return, and touched memory to decide whether to move up to the caller or down to a callee." % (target, hint_suffix))
+    if caller and not any(caller.lower() in item.lower() for item in out):
+        out.append("Prioritize caller `%s` when interpreting logs; it is the nearest evidence for the gameplay contract." % caller)
+    return out
 
 
 def _has_generic_only(items: Any) -> bool:
@@ -588,21 +695,22 @@ def _ensure_trainer_assessment(analysis: Dict[str, Any], context: Dict[str, Any]
 
     hooked = _trainer_list(trainer, "what_happens_if_hooked")
     before_hooked = len(hooked)
-    if category == "identity":
-        _append_unique(hooked, "You should see player identity / name parsing events and output structure population.")
-        _append_unique(hooked, "Changing bytes here is more likely to corrupt identity/state parsing than to change gameplay behavior.")
-    elif readers:
-        _append_unique(hooked, "You should see structured stream reads and field population; use it to map packet/state layout.")
-    elif output_writes and numeric_ops:
-        _append_unique(hooked, "You should see computed numeric values before they are written into output slots.")
-        _append_unique(hooked, "If the caller consumes those output slots directly, controlled output mutation may change the downstream gameplay value.")
-    elif category == "damage" and numeric_ops:
-        _append_unique(hooked, "You should see damage/stat modifier math being applied; correlate calls with damage received/done events.")
-        _append_unique(hooked, "Hooking here is useful for telemetry first, then caller-guided mutation once argument/return semantics are known.")
-    elif output_writes:
-        _append_unique(hooked, "You should see output fields being populated; usefulness depends on what the caller does with them.")
-    else:
-        _append_unique(hooked, "Hooking should mostly confirm call frequency, arguments, and whether this helper sits on a useful path.")
+    filtered_hooked = _replace_generic_items(hooked)
+    if len(filtered_hooked) != len(hooked):
+        hooked[:] = filtered_hooked
+        notes.append("removed generic hook-effect wording")
+    for line in _specific_hook_effects(
+        category,
+        cues,
+        context,
+        readers,
+        output_writes,
+        numeric_ops,
+        mode_checks,
+        dirty_masks,
+        bitwise,
+    ):
+        _append_unique(hooked, line, 8)
 
     values = _trainer_list(trainer, "values_to_log_first")
     for item in _as_list(cues.get("output_layout_writes"))[:5]:
@@ -637,7 +745,20 @@ def _ensure_trainer_assessment(analysis: Dict[str, Any], context: Dict[str, Any]
         _append_unique(features, "Output-field monitor to discover which downstream system consumes this structure.")
 
     experiments = _trainer_list(trainer, "recommended_experiments")
-    _append_unique(experiments, "Hook once in observe-only mode and log call count, caller address, arguments, and return value.")
+    filtered_experiments = _replace_generic_items(experiments)
+    if len(filtered_experiments) != len(experiments):
+        experiments[:] = filtered_experiments
+        notes.append("removed generic experiment wording")
+    if output_writes or numeric_ops or readers or mode_checks or dirty_masks:
+        _append_unique(
+            experiments,
+            "Install a no-mutation hook and log the evidence-specific fields above; compare two controlled states before choosing caller/callee/output mutation.",
+        )
+    else:
+        _append_unique(
+            experiments,
+            "Install a no-mutation hook only to classify this target, then move analysis to the caller/callee that owns the concrete value.",
+        )
     if output_writes:
         _append_unique(experiments, "Log output buffer/field values before and after the original call; compare across two known in-game states.")
     if readers:
