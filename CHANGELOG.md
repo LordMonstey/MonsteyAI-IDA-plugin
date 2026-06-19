@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.14 - ASM pseudo rebuild workflow
+
+### Highlights
+
+- Added a `Pseudo Rebuild` tab that captures selected/focused ASM or red code and generates approximate pseudo-C.
+- Added right-click `MonsteyAI-Rebuild Pseudocode` in IDA views.
+- Generated pseudo-C stays editable before analysis and remains paired with the original ASM evidence.
+- `Analyze Generated Pseudo` sends the synthetic pseudocode through the normal Monstey analysis pipeline.
+- Prompts now tell the model that reconstructed pseudocode is approximate and must be verified against ASM addresses.
+- Data/string selections are warned as data-like instead of being silently treated as executable code.
+
 ## v0.3.13 - Pleasant workflow pass
 
 ### Highlights

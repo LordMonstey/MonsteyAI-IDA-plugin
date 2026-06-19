@@ -20,6 +20,7 @@ except Exception:
 
 ACTION_NAME = "idalocalgameai:show"
 ACTION_ANALYZE_SELECTION = "idalocalgameai:analyze_selection"
+ACTION_RECONSTRUCT_PSEUDO = "idalocalgameai:reconstruct_pseudocode"
 _popup_hooks = None
 
 
@@ -69,6 +70,24 @@ class AnalyzeSelectionAction(ida_kernwin.action_handler_t):
         return ida_kernwin.AST_DISABLE_FOR_WIDGET
 
 
+class ReconstructPseudocodeAction(ida_kernwin.action_handler_t):
+    def activate(self, ctx):
+        try:
+            from idalocalgameai.ui.panel import reconstruct_focus_pseudocode
+
+            reconstruct_focus_pseudocode()
+        except Exception as exc:
+            ida_kernwin.warning("MonsteyAI-Rebuild Pseudocode failed:\n%s" % exc)
+            ida_kernwin.msg("[%s] MonsteyAI-Rebuild Pseudocode error: %s\n" % (PLUGIN_NAME, exc))
+        return 1
+
+    def update(self, ctx):
+        widget_type = getattr(ctx, "widget_type", None)
+        if _supported_popup_widget(widget_type):
+            return ida_kernwin.AST_ENABLE_FOR_WIDGET
+        return ida_kernwin.AST_DISABLE_FOR_WIDGET
+
+
 class MonsteyPopupHooks(ida_kernwin.UI_Hooks):
     def __init__(self):
         ida_kernwin.UI_Hooks.__init__(self)
@@ -77,6 +96,7 @@ class MonsteyPopupHooks(ida_kernwin.UI_Hooks):
         try:
             if _supported_popup_widget(getattr(ctx, "widget_type", None)):
                 ida_kernwin.attach_action_to_popup(widget, popup_handle, ACTION_ANALYZE_SELECTION, None)
+                ida_kernwin.attach_action_to_popup(widget, popup_handle, ACTION_RECONSTRUCT_PSEUDO, None)
         except Exception:
             pass
 
@@ -119,6 +139,15 @@ class IDALocalGameAIPlugin(ida_idaapi.plugin_t):
             -1,
         )
         ida_kernwin.register_action(analyze_desc)
+        rebuild_desc = ida_kernwin.action_desc_t(
+            ACTION_RECONSTRUCT_PSEUDO,
+            "MonsteyAI-Rebuild Pseudocode",
+            ReconstructPseudocodeAction(),
+            "",
+            "Capture current IDA selection/focus and rebuild approximate pseudo-C from assembly",
+            -1,
+        )
+        ida_kernwin.register_action(rebuild_desc)
         if _popup_hooks is None:
             _popup_hooks = MonsteyPopupHooks()
             _popup_hooks.hook()
@@ -146,6 +175,10 @@ class IDALocalGameAIPlugin(ida_idaapi.plugin_t):
             pass
         try:
             ida_kernwin.unregister_action(ACTION_ANALYZE_SELECTION)
+        except Exception:
+            pass
+        try:
+            ida_kernwin.unregister_action(ACTION_RECONSTRUCT_PSEUDO)
         except Exception:
             pass
 

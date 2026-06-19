@@ -47,7 +47,7 @@ All strings must be valid JSON strings with escaped quotes and escaped newlines.
 
 
 OUTPUT_SCHEMA = {
-    "mode": "pseudocode|asm_fallback|mixed|data",
+    "mode": "pseudocode|pseudocode_reconstructed|asm_fallback|mixed|data",
     "summary": "short analyst-friendly explanation",
     "behavior": ["observable behavior or likely logic"],
     "game_relevance": ["why this matters for game modding or engine mapping"],
@@ -549,6 +549,8 @@ def compact_analysis_context(context: Dict[str, Any]) -> Dict[str, Any]:
         "focus": _compact_focus(_dict(context.get("focus"))),
         "decompiler": {
             "available": decompiler.get("available"),
+            "synthetic": decompiler.get("synthetic"),
+            "source": decompiler.get("source"),
             "error": _clip(decompiler.get("error"), 260),
             "truncated": decompiler.get("truncated"),
             "skipped_by_budget": decompiler.get("skipped_by_budget"),
@@ -632,6 +634,7 @@ def build_analysis_messages(context: Dict[str, Any], engine_profile: str) -> lis
             "For a data/string artifact, trainer_assessment.usefulness should usually be low or none, modification_surface should be none, and best_hook_strategy should point toward observing/tracing the referencing code rather than hooking the data itself.",
             "Do not treat IDA 'db xxh ; char' rows as executable assembly instructions.",
             "If pseudocode is available or supplied in context, analyze pseudocode data-flow before xrefs and before game-level guesses.",
+            "If context.mode is pseudocode_reconstructed or context.decompiler.synthetic is true, treat pseudocode as approximate ASM-derived pseudo-C: use it to organize control/data flow, but verify claims against assembly addresses and mention reconstruction uncertainty in risks.",
             "First identify what the function mechanically computes: output parameters, field offsets, loop entry size, operation modes, arithmetic, and return value quality.",
             "Use context.semantic_cues as first-class local evidence. Mention the cues you relied on in semantic_cues_used.",
             "Use context.evidence_pack as the shared source of truth for multi-agent analysis. Important claims should cite evidence_pack fact ids such as F001.",

@@ -146,6 +146,22 @@ Use `Analyze Red/ASM Region` when:
 
 The plugin does not need pseudocode for this mode. It extracts assembly and surrounding evidence.
 
+## Pseudo Rebuild
+
+Use `Pseudo Rebuild` when Hex-Rays cannot produce useful pseudocode but the focused/selected bytes are still executable code.
+
+Workflow:
+
+1. Select the suspicious ASM/red region in IDA, or hover/click the target instruction.
+2. Right-click and choose `MonsteyAI-Rebuild Pseudocode`, or press `Rebuild ASM -> Pseudo` in the panel.
+3. Review the captured ASM evidence on the left.
+4. Review or edit the generated pseudo-C on the right.
+5. Press `Analyze Generated Pseudo` to send the reconstructed pseudocode plus original ASM evidence through the normal AI pipeline.
+
+The generated pseudo-C is not Hex-Rays output. It is an approximate reading aid built from assembly mnemonics, registers, memory operands, labels, branches, calls, and returns. Monstey tells the model that this pseudocode is synthetic, so the analysis should still cite and verify against original ASM addresses.
+
+If the selection is mostly `.rdata`, strings, or `db/dw/dd/dq` directives, the rebuild tab warns that the focus looks like data rather than executable code. In that case, inspect the referencing functions or define the bytes as code in IDA before rebuilding.
+
 ## Focus-aware analysis
 
 The plugin tracks:

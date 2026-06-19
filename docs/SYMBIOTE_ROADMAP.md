@@ -10,6 +10,7 @@ MonsteyAI-IDA-plugin should feel less like a chatbot next to IDA and more like a
 - Temporary highlight for the current AI focus.
 - Apply AI suggested names, comments, and colors.
 - Right-click `MonsteyAI-Analyse` in IDA views.
+- Right-click `MonsteyAI-Rebuild Pseudocode` captures selected/focused ASM and opens an editable pseudo-C reconstruction workspace.
 - `Mark Review` writes a Monstey review comment and color marker at the current AI focus.
 - Persistent `Review Queue` stores review marks per dump/process with jump, copy, remove, and clear actions.
 - Animated analysis pipeline shows where Monstey is during a pass.

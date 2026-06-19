@@ -18,6 +18,7 @@ import idaapi
 from .. import PLUGIN_NAME, PLUGIN_VERSION
 from ..analysis_policy import agent_policy, model_policy, watchdog_seconds
 from ..apply import apply_colored_annotations, apply_function_name, mark_review_item, refresh_ida
+from ..asm_pseudocode import attach_reconstruction_to_context, reconstruct_pseudocode_from_context, render_asm_source
 from ..compat.qt import QT_BINDING, QtCore, QtGui, QtWidgets
 from ..config import GEMINI_MODEL_PRESETS, MODEL_PRESETS, PluginConfig, config_dir, config_path, load_config, save_config
 from ..dump_context import dump_context_path, dump_context_payload, load_dump_context, save_dump_context
@@ -387,6 +388,8 @@ class MainWidget(QtWidgets.QWidget):
         self._settings_loading = False
         self.current_context: Optional[Dict[str, Any]] = None
         self.current_analysis: Optional[Dict[str, Any]] = None
+        self.rebuild_context: Optional[Dict[str, Any]] = None
+        self.rebuild_result: Optional[Dict[str, Any]] = None
         self.worker = None
         self.analysis_run_id = 0
         self.analysis_log_active = False
@@ -498,20 +501,24 @@ class MainWidget(QtWidgets.QWidget):
         controls = QtWidgets.QHBoxLayout()
         self.btn_analyze_func = QtWidgets.QPushButton("Analyze Focus Function")
         self.btn_analyze_asm = QtWidgets.QPushButton("Analyze Focus ASM/Red")
+        self.btn_rebuild_pseudo = QtWidgets.QPushButton("Rebuild ASM -> Pseudo")
         self.btn_quick_local = QtWidgets.QPushButton("Quick Local Pass")
         self.btn_preview_focus = QtWidgets.QPushButton("Preview Focus")
         self.btn_test_llm = QtWidgets.QPushButton("Test LLM")
         self.btn_analyze_func.setToolTip("Uses the recent mouse hover/click, pseudocode cursor, view cursor, then screen EA.")
         self.btn_analyze_asm.setToolTip("Uses selection when available, otherwise the focused function or a local window around the focused address.")
+        self.btn_rebuild_pseudo.setToolTip("Capture selected/focused ASM or red code and build an approximate pseudo-C view before AI analysis.")
         self.btn_quick_local.setToolTip("No LLM call. Uses local IDA semantic cues for a fast trainer/mapping pass.")
         self.btn_preview_focus.setToolTip("Shows the current navigation snapshot without calling the LLM.")
         self.btn_analyze_func.clicked.connect(lambda checked=False: self._start_analysis_safely(force_asm=False))
         self.btn_analyze_asm.clicked.connect(lambda checked=False: self._start_analysis_safely(force_asm=True))
+        self.btn_rebuild_pseudo.clicked.connect(self._capture_asm_reconstruction)
         self.btn_quick_local.clicked.connect(lambda checked=False: self._start_analysis_safely(force_asm=True, local_only=True))
         self.btn_preview_focus.clicked.connect(self._preview_focus)
         self.btn_test_llm.clicked.connect(self._test_llm)
         controls.addWidget(self.btn_analyze_func)
         controls.addWidget(self.btn_analyze_asm)
+        controls.addWidget(self.btn_rebuild_pseudo)
         controls.addWidget(self.btn_quick_local)
         controls.addWidget(self.btn_preview_focus)
         controls.addWidget(self.btn_test_llm)
@@ -519,6 +526,7 @@ class MainWidget(QtWidgets.QWidget):
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(self._build_function_tab(), "Function")
+        self.tabs.addTab(self._build_pseudo_rebuild_tab(), "Pseudo Rebuild")
         self.tabs.addTab(self._build_review_queue_tab(), "Review Queue")
         self.tabs.addTab(self._build_dump_context_tab(), "Dump Context")
         self.tabs.addTab(self._build_external_evidence_tab(), "Evidence Sources")
@@ -638,6 +646,97 @@ class MainWidget(QtWidgets.QWidget):
         splitter.setStretchFactor(1, 2)
         splitter.setStretchFactor(2, 2)
         layout.addWidget(splitter, 1)
+        return tab
+
+    def _build_pseudo_rebuild_tab(self) -> QtWidgets.QWidget:
+        tab = QtWidgets.QWidget()
+        self.pseudo_rebuild_tab = tab
+        layout = QtWidgets.QVBoxLayout(tab)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(7)
+
+        header = QtWidgets.QFrame()
+        header.setObjectName("PseudoRebuildHeader")
+        header.setStyleSheet(
+            "QFrame#PseudoRebuildHeader { background:#181d22; border:1px solid #303943; border-radius:6px; }"
+        )
+        header_layout = QtWidgets.QHBoxLayout(header)
+        header_layout.setContentsMargins(9, 7, 9, 7)
+        self.pseudo_rebuild_status_label = QtWidgets.QLabel(
+            "Capture selected or focused ASM/red code to build approximate pseudo-C."
+        )
+        self.pseudo_rebuild_status_label.setTextFormat(QtCore.Qt.PlainText)
+        self.pseudo_rebuild_status_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.pseudo_rebuild_status_label.setStyleSheet("color:#b8d6ff; font-weight:600;")
+        self.pseudo_rebuild_conf_label = QtWidgets.QLabel("Ready")
+        self.pseudo_rebuild_conf_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.pseudo_rebuild_conf_label.setStyleSheet("color:#9af2b2; font-weight:700;")
+        header_layout.addWidget(self.pseudo_rebuild_status_label, 1)
+        header_layout.addWidget(self.pseudo_rebuild_conf_label)
+        layout.addWidget(header)
+
+        toolbar = QtWidgets.QHBoxLayout()
+        self.btn_pseudo_rebuild_capture = QtWidgets.QPushButton("Capture ASM/Red -> Pseudo")
+        self.btn_pseudo_rebuild_analyze = QtWidgets.QPushButton("Analyze Generated Pseudo")
+        self.btn_pseudo_rebuild_local = QtWidgets.QPushButton("Quick Local Pass")
+        self.btn_pseudo_rebuild_copy = QtWidgets.QPushButton("Copy Pseudocode")
+        self.btn_pseudo_rebuild_capture.setToolTip("Collect the current selection/focus from IDA and rebuild approximate pseudo-C from its assembly rows.")
+        self.btn_pseudo_rebuild_analyze.setToolTip("Send this generated pseudo-C plus original ASM evidence to the selected LLM provider.")
+        self.btn_pseudo_rebuild_local.setToolTip("Analyze the generated pseudo-C with the local deterministic pass only.")
+        self.btn_pseudo_rebuild_copy.setToolTip("Copy the generated pseudo-C to clipboard.")
+        self.btn_pseudo_rebuild_capture.clicked.connect(self._capture_asm_reconstruction)
+        self.btn_pseudo_rebuild_analyze.clicked.connect(lambda checked=False: self._analyze_reconstructed_pseudocode(local_only=False))
+        self.btn_pseudo_rebuild_local.clicked.connect(lambda checked=False: self._analyze_reconstructed_pseudocode(local_only=True))
+        self.btn_pseudo_rebuild_copy.clicked.connect(self._copy_rebuild_pseudocode)
+        self.btn_pseudo_rebuild_analyze.setEnabled(False)
+        self.btn_pseudo_rebuild_local.setEnabled(False)
+        self.btn_pseudo_rebuild_copy.setEnabled(False)
+        toolbar.addWidget(self.btn_pseudo_rebuild_capture)
+        toolbar.addWidget(self.btn_pseudo_rebuild_analyze)
+        toolbar.addWidget(self.btn_pseudo_rebuild_local)
+        toolbar.addWidget(self.btn_pseudo_rebuild_copy)
+        toolbar.addStretch(1)
+        layout.addLayout(toolbar)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        asm_panel = QtWidgets.QWidget()
+        asm_layout = QtWidgets.QVBoxLayout(asm_panel)
+        asm_layout.setContentsMargins(0, 0, 0, 0)
+        asm_label = QtWidgets.QLabel("Captured ASM evidence")
+        asm_label.setStyleSheet("color:#ffd58a; font-weight:700;")
+        self.pseudo_rebuild_asm_edit = QtWidgets.QPlainTextEdit()
+        self.pseudo_rebuild_asm_edit.setReadOnly(True)
+        self.pseudo_rebuild_asm_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        self.pseudo_rebuild_asm_edit.setPlaceholderText("IDA assembly capture appears here.")
+
+        pseudo_panel = QtWidgets.QWidget()
+        pseudo_layout = QtWidgets.QVBoxLayout(pseudo_panel)
+        pseudo_layout.setContentsMargins(0, 0, 0, 0)
+        pseudo_label = QtWidgets.QLabel("Generated pseudo-C workspace")
+        pseudo_label.setStyleSheet("color:#9af2b2; font-weight:700;")
+        self.pseudo_rebuild_edit = QtWidgets.QPlainTextEdit()
+        self.pseudo_rebuild_edit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        self.pseudo_rebuild_edit.setPlaceholderText("Approximate pseudo-C generated from ASM appears here. You can edit it before analysis.")
+
+        code_font = QtGui.QFont("Consolas")
+        code_font.setStyleHint(QtGui.QFont.Monospace)
+        self.pseudo_rebuild_asm_edit.setFont(code_font)
+        self.pseudo_rebuild_edit.setFont(code_font)
+        asm_layout.addWidget(asm_label)
+        asm_layout.addWidget(self.pseudo_rebuild_asm_edit, 1)
+        pseudo_layout.addWidget(pseudo_label)
+        pseudo_layout.addWidget(self.pseudo_rebuild_edit, 1)
+        splitter.addWidget(asm_panel)
+        splitter.addWidget(pseudo_panel)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+        layout.addWidget(splitter, 1)
+
+        self.pseudo_rebuild_warning_label = QtWidgets.QLabel("")
+        self.pseudo_rebuild_warning_label.setTextFormat(QtCore.Qt.PlainText)
+        self.pseudo_rebuild_warning_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.pseudo_rebuild_warning_label.setStyleSheet("color:#ffcf6e;")
+        layout.addWidget(self.pseudo_rebuild_warning_label)
         return tab
 
     def _build_review_queue_tab(self) -> QtWidgets.QWidget:
@@ -1982,9 +2081,14 @@ class MainWidget(QtWidgets.QWidget):
         for widget in (
             self.btn_analyze_func,
             self.btn_analyze_asm,
+            self.btn_rebuild_pseudo,
             self.btn_quick_local,
             self.btn_preview_focus,
             self.btn_test_llm,
+            self.btn_pseudo_rebuild_capture,
+            self.btn_pseudo_rebuild_analyze,
+            self.btn_pseudo_rebuild_local,
+            self.btn_pseudo_rebuild_copy,
             self.btn_save_settings,
             self.btn_send_action,
             self.btn_save_dump_context,
@@ -2010,6 +2114,11 @@ class MainWidget(QtWidgets.QWidget):
         ):
             widget.setEnabled(not busy)
         self.btn_refresh_map.setEnabled(not busy)
+        if not busy:
+            has_rebuild = bool(self.rebuild_result and self.pseudo_rebuild_edit.toPlainText().strip())
+            self.btn_pseudo_rebuild_analyze.setEnabled(has_rebuild)
+            self.btn_pseudo_rebuild_local.setEnabled(has_rebuild)
+            self.btn_pseudo_rebuild_copy.setEnabled(has_rebuild)
         if busy:
             self.btn_apply_name.setEnabled(False)
             self.btn_apply_comments.setEnabled(False)
@@ -2485,6 +2594,101 @@ class MainWidget(QtWidgets.QWidget):
         self._set_status("Focus preview ready", ok=True)
         self.tabs.setCurrentWidget(self.tabs.widget(0))
 
+    def _capture_asm_reconstruction(self) -> None:
+        self._save_settings_from_ui()
+        self._set_status("Capturing ASM for pseudo rebuild...", ok=True)
+        try:
+            QtWidgets.QApplication.processEvents()
+        except Exception:
+            pass
+        try:
+            ctx = collect_context(force_asm=True, cfg=self.cfg)
+            result = reconstruct_pseudocode_from_context(ctx)
+        except Exception as exc:
+            self._set_status("Pseudo rebuild capture failed", ok=False)
+            self.pseudo_rebuild_status_label.setText("Pseudo rebuild capture failed")
+            self.pseudo_rebuild_conf_label.setText("Error")
+            self.pseudo_rebuild_conf_label.setStyleSheet("color:#ff9f9f; font-weight:700;")
+            self.pseudo_rebuild_warning_label.setText(str(exc))
+            self.pseudo_rebuild_asm_edit.setPlainText("")
+            self.pseudo_rebuild_edit.setPlainText("")
+            self.btn_pseudo_rebuild_analyze.setEnabled(False)
+            self.btn_pseudo_rebuild_local.setEnabled(False)
+            self.btn_pseudo_rebuild_copy.setEnabled(False)
+            info("Pseudo rebuild capture failed: %s" % exc)
+            return
+
+        self.rebuild_context = ctx
+        self.rebuild_result = result
+        self.current_context = ctx
+        try:
+            self._update_game_label(ctx)
+        except Exception:
+            pass
+        asm_text = render_asm_source(ctx)
+        pseudo = str(result.get("pseudo") or "")
+        warnings = result.get("warnings") or []
+        confidence = float(result.get("confidence") or 0.0)
+        source_start = result.get("source_start") or ctx.get("start_ea") or ctx.get("current_ea") or "-"
+        source_end = result.get("source_end") or ctx.get("end_ea") or "-"
+        translated = int(result.get("translated_instruction_count") or 0)
+        total = int(result.get("instruction_count") or 0)
+
+        self.pseudo_rebuild_asm_edit.setPlainText(asm_text)
+        self.pseudo_rebuild_edit.setPlainText(pseudo)
+        self.pseudo_rebuild_status_label.setText(
+            "Source %s - %s | %s | %d/%d instructions translated"
+            % (source_start, source_end, ctx.get("region_kind") or ctx.get("mode") or "-", translated, total)
+        )
+        color = "#9af2b2" if confidence >= 0.48 else "#ffd58a" if confidence >= 0.28 else "#ff9f9f"
+        self.pseudo_rebuild_conf_label.setStyleSheet("color:%s; font-weight:700;" % color)
+        self.pseudo_rebuild_conf_label.setText("Approx %.2f" % confidence)
+        self.pseudo_rebuild_warning_label.setText(" | ".join(str(item) for item in warnings[:4]))
+        has_pseudo = bool(pseudo.strip())
+        self.btn_pseudo_rebuild_analyze.setEnabled(has_pseudo)
+        self.btn_pseudo_rebuild_local.setEnabled(has_pseudo)
+        self.btn_pseudo_rebuild_copy.setEnabled(has_pseudo)
+        self.tabs.setCurrentWidget(self.pseudo_rebuild_tab)
+        self._refresh_context_label(ctx)
+        self._set_status("Pseudo rebuild ready" if has_pseudo else "Pseudo rebuild produced no code", ok=has_pseudo)
+        try:
+            self.toast.show_message("Pseudo rebuild ready" if has_pseudo else "No pseudocode generated", ok=has_pseudo)
+        except Exception:
+            pass
+
+    def _copy_rebuild_pseudocode(self) -> None:
+        text = self.pseudo_rebuild_edit.toPlainText()
+        if not text.strip():
+            self._set_status("No generated pseudocode to copy", ok=False)
+            return
+        QtWidgets.QApplication.clipboard().setText(text)
+        self._set_status("Generated pseudocode copied", ok=True)
+        try:
+            self.toast.show_message("Generated pseudocode copied", ok=True)
+        except Exception:
+            pass
+
+    def _analyze_reconstructed_pseudocode(self, local_only: bool = False) -> None:
+        if not self.rebuild_context or not self.rebuild_result:
+            self._capture_asm_reconstruction()
+        if not self.rebuild_context or not self.rebuild_result:
+            return
+        pseudo = self.pseudo_rebuild_edit.toPlainText()
+        if not pseudo.strip():
+            self._set_status("Generate or paste pseudocode first", ok=False)
+            return
+        reconstruction = dict(self.rebuild_result)
+        reconstruction["pseudo"] = pseudo
+        reconstruction["lines"] = pseudo.splitlines()
+        reconstruction["line_count"] = len(reconstruction["lines"])
+        ctx = attach_reconstruction_to_context(self.rebuild_context, reconstruction)
+        self._start_analysis(
+            force_asm=True,
+            local_only=local_only,
+            prepared_context=ctx,
+            run_label="reconstructed_pseudocode",
+        )
+
     def _test_llm(self) -> None:
         self._save_settings_from_ui()
         self._set_busy(True)
@@ -2568,10 +2772,17 @@ class MainWidget(QtWidgets.QWidget):
             info("Analysis launch error: %s" % exc)
             info(message)
 
-    def _start_analysis(self, force_asm: bool, local_only: bool = False) -> None:
+    def _start_analysis(
+        self,
+        force_asm: bool,
+        local_only: bool = False,
+        prepared_context: Optional[Dict[str, Any]] = None,
+        run_label: str = "",
+    ) -> None:
         self._save_settings_from_ui()
         self.analysis_run_id += 1
         run_id = self.analysis_run_id
+        prepared = isinstance(prepared_context, dict)
         self.current_analysis = None
         self.current_action_kind = None
         self.action_history = ""
@@ -2597,25 +2808,30 @@ class MainWidget(QtWidgets.QWidget):
         )
         self.last_summary_text = ""
         self._append_analysis_log(
-            "run #%d started: force_asm=%s, local_only=%s"
-            % (run_id, bool(force_asm), bool(local_only)),
+            "run #%d started: %s, local_only=%s"
+            % (run_id, run_label or ("force_asm=%s" % bool(force_asm)), bool(local_only)),
             "step",
         )
-        self._append_analysis_log("collecting focused IDA context...", "step")
-        self._set_status("Collecting IDA context...", ok=True)
-        try:
-            QtWidgets.QApplication.processEvents()
-        except Exception:
-            pass
-        try:
-            self.current_context = collect_context(force_asm=force_asm, cfg=self.cfg)
-        except Exception as exc:
-            self._set_status("IDA context error", ok=False)
-            self._append_analysis_log("IDA context error: %s" % exc, "error")
-            self._stop_analysis_debug_timer()
-            self.summary_edit.setPlainText(str(exc))
-            info(str(exc))
-            return
+        if prepared:
+            self.current_context = prepared_context
+            self._append_analysis_log("using prepared context: %s" % (prepared_context.get("mode") or run_label or "prepared"), "step")
+            self._set_status("Preparing generated pseudocode analysis...", ok=True)
+        else:
+            self._append_analysis_log("collecting focused IDA context...", "step")
+            self._set_status("Collecting IDA context...", ok=True)
+            try:
+                QtWidgets.QApplication.processEvents()
+            except Exception:
+                pass
+            try:
+                self.current_context = collect_context(force_asm=force_asm, cfg=self.cfg)
+            except Exception as exc:
+                self._set_status("IDA context error", ok=False)
+                self._append_analysis_log("IDA context error: %s" % exc, "error")
+                self._stop_analysis_debug_timer()
+                self.summary_edit.setPlainText(str(exc))
+                info(str(exc))
+                return
 
         ctx = self.current_context
         timings = (ctx.get("performance_budget") or {}).get("timings_seconds") or {}
@@ -4037,4 +4253,12 @@ def analyze_focus(force_asm: bool = True) -> LocalGameAIForm:
     widget = getattr(form, "widget", None)
     if widget is not None:
         widget._start_analysis(force_asm=force_asm)
+    return form
+
+
+def reconstruct_focus_pseudocode() -> LocalGameAIForm:
+    form = show_panel()
+    widget = getattr(form, "widget", None)
+    if widget is not None:
+        widget._capture_asm_reconstruction()
     return form

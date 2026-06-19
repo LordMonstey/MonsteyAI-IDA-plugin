@@ -19,6 +19,7 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 ## Why it is different
 
 - **Focus-aware IDA workflow:** mouse/cursor focus, focus lock, right-click analysis, red-region ASM fallback, and a visible AI focus indicator.
+- **ASM pseudo rebuild:** when Hex-Rays cannot produce pseudocode, Monstey can rebuild an approximate pseudo-C workspace from selected/focused ASM and analyze that with the original addresses as evidence.
 - **Static-first reverse context:** decompiler text, assembly, bytes, strings, XREFs, comments, data refs, external evidence, and per-process memory are joined before prompting.
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
 - **IDA symbiote actions:** Monstey can jump to the exact AI focus, highlight it, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
@@ -95,6 +96,8 @@ Setup notes:
 - LLM connection test.
 - Analyze current function with Hex-Rays pseudocode when available.
 - Analyze red/non-decompilable regions using assembly fallback.
+- Rebuild selected/focused ASM or red code into approximate pseudo-C in the `Pseudo Rebuild` tab, then analyze the generated pseudocode.
+- Right-click `MonsteyAI-Rebuild Pseudocode` in IDA views to send the current ASM focus directly into the rebuild workspace.
 - Track recent IDA navigation, mouse hover/click, pseudocode cursor, highlighted identifier, active widget, and nearby focused assembly.
 - Right-click `MonsteyAI-Analyse` action in IDA views.
 - Opening signature overlay: `LordMonstey Made That`.
@@ -210,6 +213,11 @@ Setup notes:
   - status toasts provide lightweight feedback without replacing the summary;
   - Review Queue persists `Mark Review` addresses in the local per-dump Process Map;
   - review marks can be jumped to, copied, removed, or cleared.
+- ASM pseudo rebuild workflow v0.3.14:
+  - `Pseudo Rebuild` captures selected/focused ASM or red code and generates approximate pseudo-C;
+  - right-click `MonsteyAI-Rebuild Pseudocode` opens the rebuild workspace from IDA views;
+  - generated pseudo-C can be edited, copied, analyzed with the LLM, or analyzed locally;
+  - prompts mark this pseudocode as synthetic so the model verifies every claim against ASM addresses.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;
