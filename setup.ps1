@@ -16,6 +16,9 @@ param(
     [switch]$InstallOllama,
     [switch]$StartOllama,
     [switch]$PullModel,
+    [switch]$InstallToolchain,
+    [ValidateSet("Core", "Advanced", "Full")]
+    [string]$ToolchainTier = "Core",
     [switch]$CreateLauncher,
     [switch]$CreateDesktopShortcut,
     [switch]$NonInteractive,
@@ -275,6 +278,23 @@ function Invoke-OllamaSetup {
     }
 }
 
+function Install-ToolchainIfRequested {
+    if (!$InstallToolchain) {
+        return
+    }
+    $Script = Join-Path $Root "scripts\setup_toolchain.ps1"
+    if (!(Test-Path -LiteralPath $Script)) {
+        Write-Warn "Toolchain setup script was not found: $Script"
+        return
+    }
+    $Args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Script, "-Tier", $ToolchainTier)
+    if ($DryRun) {
+        $Args += "-DryRun"
+    }
+    Write-Step "Preparing optional analysis toolchain ($ToolchainTier)"
+    & powershell @Args
+}
+
 function Write-LauncherInfo {
     if (!$CreateLauncher) {
         return
@@ -346,6 +366,7 @@ if ($InstallScope -in @("IDA", "Both")) {
 
 Write-PluginConfig
 Invoke-OllamaSetup
+Install-ToolchainIfRequested
 Write-SetupState $ResolvedIdaPath $InstalledDirs.ToArray()
 Write-LauncherInfo
 New-DesktopShortcut $ResolvedIdaPath

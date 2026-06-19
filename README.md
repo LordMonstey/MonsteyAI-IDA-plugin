@@ -21,6 +21,7 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **Focus-aware IDA workflow:** mouse/cursor focus, focus lock, right-click analysis, red-region ASM fallback, and a visible AI focus indicator.
 - **ASM pseudo rebuild:** when Hex-Rays cannot produce pseudocode, Monstey can rebuild an approximate pseudo-C workspace from selected/focused ASM and analyze that with the original addresses as evidence.
 - **Static-first reverse context:** decompiler text, assembly, bytes, strings, XREFs, comments, data refs, external evidence, and per-process memory are joined before prompting.
+- **Optional analysis toolchain:** a separate sidecar can use Capstone, LIEF, YARA, Unicorn, Miasm, angr, and manually installed Triton without importing heavy libraries into IDAPython.
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
 - **IDA symbiote actions:** Monstey can jump to the exact AI focus, highlight it, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
 - **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
@@ -52,6 +53,14 @@ Full local stack on a fresh Windows machine with Ollama:
 ```powershell
 .\setup.cmd -InstallScope Both -IdaPath "C:\Path\To\IDA Professional 9.0\ida.exe" -ConfigureLLM -InstallOllama -StartOllama -PullModel -CreateDesktopShortcut
 ```
+
+Optional static-analysis toolchain sidecar:
+
+```powershell
+.\setup.cmd -InstallToolchain -ToolchainTier Core
+```
+
+Use `Core` for Capstone, LIEF, YARA, Unicorn, and Miasm. Use `Advanced` or `Full` to also try heavier angr installs. Triton binary-analysis bindings are detected if installed manually; the setup does not auto-install the PyPI `triton` package because that name is commonly used by an unrelated GPU/compiler package.
 
 Launcher after setup:
 
@@ -107,6 +116,9 @@ Setup notes:
 - Non-intrusive status toasts confirm jumps, copies, applies, review marks, errors, and completed workflows.
 - `Review Queue` tab stores marked addresses per dump/process with jump/copy/remove/clear controls.
 - `Dump Context` tab for analyst-provided process, engine, objective, class, global, and naming notes.
+- `Integrations > Toolchain Check` verifies optional sidecar libraries without loading them into IDA.
+- `Integrations > Obfuscation Scout` adds evidence for flattening candidates, opaque predicates, indirect branches, bitwise mixes, and magic constants.
+- `Integrations > Run Toolchain Scouts` adds Capstone/LIEF/YARA evidence when the sidecar libraries are installed.
 - Pre-analysis hypothesis prompt: tell the AI what you think the function does, or let it analyze solo.
 - Extract assembly, bytes, calls, callers, data refs, strings, comments, and engine hints.
 - Expand nearby callers/callees through XREFs for extra role context.
@@ -218,6 +230,12 @@ Setup notes:
   - right-click `MonsteyAI-Rebuild Pseudocode` opens the rebuild workspace from IDA views;
   - generated pseudo-C can be edited, copied, analyzed with the LLM, or analyzed locally;
   - prompts mark this pseudocode as synthetic so the model verifies every claim against ASM addresses.
+- Optional analysis toolchain sidecar v0.3.15:
+  - sidecar process keeps Capstone/LIEF/YARA/Unicorn/Miasm/angr away from IDAPython;
+  - `Toolchain Check` reports available/missing libraries;
+  - `Obfuscation Scout` emits evidence rows for flattened/dispatcher-like control flow, opaque predicates, indirect branches, bitwise mixes, and magic constants;
+  - `Run Toolchain Scouts` adds Capstone operand/control-flow evidence, LIEF PE metadata, and custom YARA matches when installed;
+  - `setup.ps1 -InstallToolchain -ToolchainTier Core|Advanced|Full` prepares the sidecar venv; Core includes Capstone, LIEF, YARA, Unicorn, and Miasm.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;

@@ -1,0 +1,8 @@
+# Advanced optional sidecar dependencies.
+# These are heavier and may take longer to install on Windows.
+angr>=9.2.0
+
+# Triton dynamic binary analysis is intentionally not auto-installed here:
+# the PyPI name "triton" is commonly used by a GPU/compiler package. Install
+# the binary-analysis Triton bindings manually, then Toolchain Check will detect
+# the "triton" module if present.

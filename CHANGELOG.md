@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.15 - Optional analysis toolchain sidecar
+
+### Highlights
+
+- Added a separate Python sidecar for optional heavy reverse-engineering libraries so IDAPython stays stable.
+- Added sidecar library detection for Capstone, LIEF, yara-python, Unicorn, Miasm, angr, and manually installed Triton.
+- Added `Toolchain Check`, `Obfuscation Scout`, and `Run Toolchain Scouts` buttons in the `Integrations` tab.
+- Obfuscation Scout emits static evidence for high branch density, dispatcher/flattening shape, indirect branches, opaque predicates, bitwise mixes, and magic constants.
+- Capstone, LIEF, and YARA enrich Evidence Sources automatically when installed.
+- Added `scripts/setup_toolchain.ps1` plus `setup.ps1 -InstallToolchain -ToolchainTier Core|Advanced|Full`; Core installs Capstone, LIEF, yara-python, Unicorn, and Miasm.
+- Added optional sidecar requirements files for core and advanced toolchains.
+
 ## v0.3.14 - ASM pseudo rebuild workflow
 
 ### Highlights

@@ -16,6 +16,8 @@ MonsteyAI-IDA-plugin should feel less like a chatbot next to IDA and more like a
 - Animated analysis pipeline shows where Monstey is during a pass.
 - Status toasts confirm completed actions without covering the analysis.
 - IDA rename events refresh Monstey context labels and global/data names.
+- Optional analysis toolchain sidecar keeps Capstone/LIEF/YARA/Unicorn/Miasm/angr outside IDAPython.
+- Obfuscation Scout emits flattening, opaque-predicate, indirect-branch, bitwise-mix, and magic-constant evidence into Evidence Sources.
 
 ## High-Impact Next Moves
 
@@ -35,6 +37,15 @@ Turn the current function into an explorable trail:
 - callers, callees, data refs, string refs around it;
 - one-click promote a neighbor into the next analysis focus;
 - preserve why the neighbor was selected.
+
+### 2.5. IR/Deobfuscation Workbench
+
+Build on the sidecar:
+
+- lift focused ASM into Miasm IR when available;
+- compare raw ASM, reconstructed pseudo-C, and simplified IR side by side;
+- mark opaque predicates and dispatcher state variables;
+- feed simplified facts back into Evidence Sources before the LLM pass.
 
 ### 3. Type/Struct Drafting
 

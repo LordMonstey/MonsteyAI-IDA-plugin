@@ -676,6 +676,8 @@ def build_analysis_messages(context: Dict[str, Any], engine_profile: str) -> lis
             "Use context.dump_context.user_notes as analyst-provided dump/process background; treat it as high-priority context but still not binary proof.",
             "Use context.external_evidence as high-priority static tool/analyst evidence for this dump: diff results, signatures, capa/rule matches, deobfuscation notes, structure/vtable hints, xrefs, and strings.",
             "When external evidence is present, explicitly mention which static evidence changed your confidence, naming, trainer usefulness, or next target.",
+            "When external evidence mentions sidecar obfuscation, flattening, opaque predicates, indirect branches, bitwise mixes, or magic constants, explain the obfuscation impact before assigning a high-level gameplay role.",
+            "If sidecar evidence marks a dispatcher/flattening candidate, prefer a conservative name and propose a next XREF/IR/deobfuscation step instead of pretending the bounded selection is the whole function.",
             "Treat external evidence as imported facts to verify against the current IDB; do not blindly trust old-version names or signatures if current code contradicts them.",
             "For dump/static analysis, prefer diff/deobf/structure/signature/rule evidence over runtime assumptions.",
             "If priority_analyst_context.present is true, treat priority_analyst_context.user_hypothesis as the primary hypothesis to verify.",

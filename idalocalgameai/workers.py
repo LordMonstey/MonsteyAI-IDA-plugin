@@ -23,6 +23,7 @@ from .prompts import (
 )
 from .pseudodiff import local_pseudocode_diff, render_local_pseudocode_diff_text
 from .schemas import extract_json_object, normalize_analysis, parse_json_object
+from .toolchain import toolchain_scout_context, toolchain_status
 from .trainer_intel import build_trainer_intel
 
 
@@ -682,4 +683,38 @@ class PseudoDiffWorker(QtCore.QThread):
                 text = fallback_text + "\n\nAI note:\n- Provider failed or timed out: %s" % str(exc)[:400]
                 self.succeeded.emit(local, text)
         except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class ToolchainWorker(QtCore.QThread):
+    succeeded = signal(dict, str)
+    failed = signal(str)
+    progress = signal(str)
+
+    def __init__(self, command: str, context: Dict[str, Any] = None, scout: str = "all", timeout: int = 45, parent=None):
+        super().__init__(parent)
+        self.command = str(command or "check")
+        self.context = context if isinstance(context, dict) else {}
+        self.scout = str(scout or "all")
+        self.timeout = int(timeout or 45)
+
+    def _progress(self, message: str) -> None:
+        try:
+            self.progress.emit(str(message))
+        except Exception:
+            pass
+
+    def run(self):
+        try:
+            if self.command == "check":
+                self._progress("toolchain sidecar: checking optional libraries")
+                data = toolchain_status(timeout=max(8, min(self.timeout, 30)))
+            else:
+                self._progress("toolchain sidecar: running %s scout" % self.scout)
+                data = toolchain_scout_context(self.context, scout=self.scout, timeout=max(10, self.timeout))
+            text = str(data.get("evidence_text") or "").strip()
+            self._progress("toolchain sidecar: completed with %s row(s)" % data.get("row_count", "-"))
+            self.succeeded.emit(data, text)
+        except Exception as exc:
+            self._progress("toolchain sidecar failed: %s" % str(exc)[:240])
             self.failed.emit(str(exc))

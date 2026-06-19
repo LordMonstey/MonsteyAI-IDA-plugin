@@ -37,6 +37,12 @@ Copy-Item -LiteralPath (Join-Path $Root "idalocalgameai") -Destination (Join-Pat
 Copy-Item -LiteralPath (Join-Path $Root "README.md") -Destination (Join-Path $PluginTarget "README.md") -Force
 Copy-Item -LiteralPath (Join-Path $Root "docs") -Destination (Join-Path $PluginTarget "docs") -Recurse
 Copy-Item -LiteralPath (Join-Path $Root "scripts") -Destination (Join-Path $PluginTarget "scripts") -Recurse
+foreach ($Req in @("requirements.txt", "requirements-toolchain-core.txt", "requirements-toolchain-advanced.txt")) {
+    $ReqPath = Join-Path $Root $Req
+    if (Test-Path -LiteralPath $ReqPath) {
+        Copy-Item -LiteralPath $ReqPath -Destination (Join-Path $PluginTarget $Req) -Force
+    }
+}
 foreach ($Helper in @("setup.ps1", "setup.cmd", "MonsteyAI-Launcher.ps1", "MonsteyAI-Launcher.cmd")) {
     $HelperPath = Join-Path $Root $Helper
     if (Test-Path -LiteralPath $HelperPath) {

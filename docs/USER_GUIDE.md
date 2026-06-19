@@ -405,6 +405,26 @@ Local buttons:
 - `Signature Scout`: emits a deterministic local function fingerprint plus callee/string shape;
 - `Run Static Scouts`: appends both scouts into the current dump evidence file.
 
+Optional toolchain sidecar:
+
+- `Toolchain Check`: starts a separate Python process and reports which optional libraries are available: Capstone, LIEF, yara-python, Unicorn, Miasm, angr, and manually installed Triton;
+- `Obfuscation Scout`: inspects the current bounded ASM for high branch density, dispatcher/flattening shape, indirect branches, opaque predicates, bitwise mixes, and magic constants;
+- `Run Toolchain Scouts`: runs Obfuscation Scout plus Capstone operand/control-flow evidence, LIEF file metadata, and custom YARA matches when those libraries are installed.
+
+Install the sidecar from the project root:
+
+```powershell
+.\setup.cmd -InstallToolchain -ToolchainTier Core
+```
+
+`Core` installs Capstone, LIEF, yara-python, Unicorn, and Miasm into `%USERPROFILE%\.monstey-ai-plugin\toolchain\.venv`. `Advanced` / `Full` also try heavier libraries such as angr. The plugin never imports these libraries inside IDA; it talks to the sidecar through bounded JSON.
+
+For custom YARA rules, place `.yar` or `.yara` files in:
+
+```text
+%USERPROFILE%\.monstey-ai-plugin\yara
+```
+
 ## Sanitization
 
 Text imported from external static tools is sanitized before it reaches prompts:

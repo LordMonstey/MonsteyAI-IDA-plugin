@@ -67,6 +67,7 @@ from ..workers import (
     LLMWorker,
     PseudoDiffWorker,
     TestLLMWorker,
+    ToolchainWorker,
     ensure_function_questions,
     ensure_user_context_alignment,
 )
@@ -421,6 +422,7 @@ class MainWidget(QtWidgets.QWidget):
         self.test_worker = None
         self.action_worker = None
         self.pseudodiff_worker = None
+        self.toolchain_worker = None
         self.current_action_kind: Optional[str] = None
         self.action_history = ""
         self.last_action_code = ""
@@ -1146,6 +1148,26 @@ class MainWidget(QtWidgets.QWidget):
         toolbar.addWidget(self.btn_all_static_scouts)
         layout.addLayout(toolbar)
 
+        toolchain_bar = QtWidgets.QHBoxLayout()
+        self.btn_toolchain_check = QtWidgets.QPushButton("Toolchain Check")
+        self.btn_obfuscation_scout = QtWidgets.QPushButton("Obfuscation Scout")
+        self.btn_toolchain_scouts = QtWidgets.QPushButton("Run Toolchain Scouts")
+        self.btn_toolchain_check.setToolTip("Check optional sidecar libraries: Capstone, LIEF, YARA, Unicorn, Miasm, angr, Triton.")
+        self.btn_obfuscation_scout.setToolTip("Run bounded obfuscation heuristics plus Capstone evidence when available.")
+        self.btn_toolchain_scouts.setToolTip("Run sidecar scouts for obfuscation, Capstone, LIEF, and YARA where available.")
+        self.btn_toolchain_check.clicked.connect(self._run_toolchain_check)
+        self.btn_obfuscation_scout.clicked.connect(lambda checked=False: self._run_toolchain_scout("obfuscation"))
+        self.btn_toolchain_scouts.clicked.connect(lambda checked=False: self._run_toolchain_scout("all"))
+        self.toolchain_status_label = QtWidgets.QLabel("Optional sidecar: not checked")
+        self.toolchain_status_label.setTextFormat(QtCore.Qt.PlainText)
+        self.toolchain_status_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.toolchain_status_label.setStyleSheet("color:#aeb7c2;")
+        toolchain_bar.addWidget(self.btn_toolchain_check)
+        toolchain_bar.addWidget(self.btn_obfuscation_scout)
+        toolchain_bar.addWidget(self.btn_toolchain_scouts)
+        toolchain_bar.addWidget(self.toolchain_status_label, 1)
+        layout.addLayout(toolchain_bar)
+
         splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.integration_raw_edit = QtWidgets.QPlainTextEdit()
         self.integration_raw_edit.setPlaceholderText(
@@ -1663,6 +1685,71 @@ class MainWidget(QtWidgets.QWidget):
         self.integration_preview_edit.setPlainText(render_integration_preview("notes", text, ctx))
         self._append_to_external_evidence(text, "local static scouts")
 
+    def _run_toolchain_check(self) -> None:
+        self._set_busy(True)
+        self._set_status("Checking optional sidecar toolchain...", ok=True)
+        self.toolchain_status_label.setText("Checking sidecar...")
+        self.toolchain_worker = ToolchainWorker("check", timeout=20, parent=self)
+        self.toolchain_worker.progress.connect(lambda message: self._set_status(message, ok=True))
+        self.toolchain_worker.succeeded.connect(self._on_toolchain_check_ok)
+        self.toolchain_worker.failed.connect(self._on_toolchain_failed)
+        self.toolchain_worker.finished.connect(lambda: self._set_busy(False))
+        self.toolchain_worker.start()
+
+    def _run_toolchain_scout(self, scout: str) -> None:
+        ctx = self._integration_context()
+        timeout = 60 if scout == "all" else 35
+        self._set_busy(True)
+        self._set_status("Running %s sidecar scout..." % scout, ok=True)
+        self.toolchain_status_label.setText("Running %s scout..." % scout)
+        self.toolchain_worker = ToolchainWorker("scout_context", context=ctx, scout=scout, timeout=timeout, parent=self)
+        self.toolchain_worker.progress.connect(lambda message: self._set_status(message, ok=True))
+        self.toolchain_worker.succeeded.connect(lambda data, text, selected=scout, captured_ctx=ctx: self._on_toolchain_scout_ok(data, text, selected, captured_ctx))
+        self.toolchain_worker.failed.connect(self._on_toolchain_failed)
+        self.toolchain_worker.finished.connect(lambda: self._set_busy(False))
+        self.toolchain_worker.start()
+
+    def _toolchain_library_summary(self, data: Dict[str, Any]) -> str:
+        libraries = data.get("libraries") or []
+        available = [str(item.get("name")) for item in libraries if isinstance(item, dict) and item.get("available")]
+        missing = [str(item.get("name")) for item in libraries if isinstance(item, dict) and not item.get("available")]
+        return "available: %s | missing: %s" % (", ".join(available) if available else "-", ", ".join(missing) if missing else "-")
+
+    def _on_toolchain_check_ok(self, data: Dict[str, Any], text: str) -> None:
+        summary = self._toolchain_library_summary(data)
+        self.toolchain_status_label.setText(summary)
+        self.integration_raw_edit.setPlainText(text or summary)
+        self.integration_preview_edit.setPlainText(text or summary)
+        self._set_status("Toolchain check ready | %s" % summary, ok=True)
+        try:
+            self.toast.show_message("Toolchain check ready", ok=True)
+        except Exception:
+            pass
+
+    def _on_toolchain_scout_ok(self, data: Dict[str, Any], text: str, scout: str, ctx: Dict[str, Any]) -> None:
+        if not text.strip():
+            text = "note sidecar %s scout returned no evidence rows" % scout
+        preset = "deobf" if scout in ("obfuscation", "deobf") else "notes"
+        index = self.integration_preset_combo.findData(preset)
+        if index >= 0:
+            self.integration_preset_combo.setCurrentIndex(index)
+        self.integration_raw_edit.setPlainText(text)
+        self.integration_preview_edit.setPlainText(render_integration_preview(preset, text, ctx))
+        summary = self._toolchain_library_summary(data)
+        elapsed = float(data.get("elapsed_seconds") or 0.0)
+        self.toolchain_status_label.setText("%s | %.2fs" % (summary, elapsed))
+        self._append_to_external_evidence(text, "sidecar %s scout" % scout)
+        try:
+            self.toast.show_message("Sidecar scout added evidence", ok=True)
+        except Exception:
+            pass
+
+    def _on_toolchain_failed(self, message: str) -> None:
+        self.toolchain_status_label.setText("Sidecar failed")
+        self.integration_preview_edit.setPlainText("Toolchain sidecar failed:\n%s" % message)
+        self._set_status("Toolchain sidecar failed", ok=False)
+        info("Toolchain sidecar failed: %s" % message)
+
     def _refresh_game_map(self) -> None:
         context = self.current_context if self.current_context else None
         data = load_game_map(context)
@@ -2111,6 +2198,9 @@ class MainWidget(QtWidgets.QWidget):
             self.btn_structure_scout,
             self.btn_signature_scout,
             self.btn_all_static_scouts,
+            self.btn_toolchain_check,
+            self.btn_obfuscation_scout,
+            self.btn_toolchain_scouts,
         ):
             widget.setEnabled(not busy)
         self.btn_refresh_map.setEnabled(not busy)

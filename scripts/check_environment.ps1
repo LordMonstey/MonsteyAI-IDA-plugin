@@ -51,6 +51,8 @@ $IdaExe = Resolve-IdaExe $IdaPath
 $IdaPlugins = if ($IdaExe) { Join-Path (Split-Path -Parent $IdaExe) "plugins" } else { "" }
 $ConfigPath = Join-Path $env:USERPROFILE ".monstey-ai-plugin\config.json"
 $StatePath = Join-Path $env:USERPROFILE ".monstey-ai-plugin\setup_state.json"
+$ToolchainStatePath = Join-Path $env:USERPROFILE ".monstey-ai-plugin\toolchain\toolchain_state.json"
+$ToolchainPython = Join-Path $env:USERPROFILE ".monstey-ai-plugin\toolchain\.venv\Scripts\python.exe"
 $OllamaCmd = Get-Command ollama -ErrorAction SilentlyContinue
 $IdaPySwitch = if ($IdaExe) { Join-Path (Split-Path -Parent $IdaExe) "idapyswitch.exe" } else { "" }
 
@@ -64,6 +66,8 @@ $Rows = [ordered]@{
     "idapyswitch available" = if ($IdaPySwitch) { Test-Path -LiteralPath $IdaPySwitch } else { $false }
     "Config exists" = Test-Path -LiteralPath $ConfigPath
     "Setup state exists" = Test-Path -LiteralPath $StatePath
+    "Toolchain state exists" = Test-Path -LiteralPath $ToolchainStatePath
+    "Toolchain python exists" = Test-Path -LiteralPath $ToolchainPython
     "Ollama command" = if ($OllamaCmd) { $OllamaCmd.Source } else { "not found" }
     "Ollama API reachable" = Test-Endpoint "http://127.0.0.1:11434/api/version"
     "OpenAI-compatible endpoint reachable" = Test-Endpoint "http://127.0.0.1:11434/v1/models"

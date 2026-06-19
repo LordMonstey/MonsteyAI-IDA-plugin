@@ -1,0 +1,7 @@
+# Optional Monstey sidecar dependencies.
+# Installed into %USERPROFILE%\.monstey-ai-plugin\toolchain\.venv, not into IDAPython.
+capstone>=5.0.0
+lief>=0.16.0
+yara-python>=4.5.0
+unicorn>=2.0.1
+miasm>=0.1.5
