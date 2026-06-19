@@ -253,6 +253,9 @@ Setup notes:
   - each successful analysis opens a small simple-language explanation window;
   - default language is English, with a French switch in the popup and in settings;
   - generation uses the existing analysis/cues and does not add another LLM request.
+- Better render/draw plain summaries v0.3.20:
+  - the popup now reads raw Hex-Rays lines, strings, XREF strings, assembly, and semantic cues;
+  - clues such as `DrawIndexed`, draw calls, swapchains, render targets, vertex/index buffers produce a dedicated graphics summary instead of the generic unknown fallback.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;

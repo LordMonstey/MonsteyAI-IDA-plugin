@@ -3417,6 +3417,67 @@ class MainWidget(QtWidgets.QWidget):
             return "likely, but worth checking"
         return "uncertain"
 
+    def _collect_verbal_text(self, value: Any, out: list, limit: int = 120) -> None:
+        if len(out) >= limit:
+            return
+        if isinstance(value, dict):
+            for key in (
+                "summary",
+                "text",
+                "value",
+                "string",
+                "line",
+                "disasm",
+                "name",
+                "function",
+                "label",
+                "reason",
+                "description",
+                "meaning",
+                "callsite_disasm",
+            ):
+                if key in value:
+                    self._collect_verbal_text(value.get(key), out, limit)
+            for key in (
+                "behavior",
+                "dataflow",
+                "evidence",
+                "lines",
+                "semantic_cues_used",
+                "comments",
+                "strings",
+                "callees",
+                "callers",
+                "data_refs",
+                "string_anchors",
+                "nearby_assembly",
+                "local_assembly",
+            ):
+                if key in value:
+                    self._collect_verbal_text(value.get(key), out, limit)
+            return
+        if isinstance(value, list):
+            for item in value[:40]:
+                self._collect_verbal_text(item, out, limit)
+                if len(out) >= limit:
+                    break
+            return
+        text = str(value or "").strip()
+        if text:
+            out.append(text[:360])
+
+    def _verbal_evidence_text(self, analysis: Dict[str, Any]) -> str:
+        context = self.current_context or {}
+        chunks = []
+        self._collect_verbal_text(analysis, chunks)
+        self._collect_verbal_text(context.get("decompiler") or {}, chunks)
+        self._collect_verbal_text(context.get("assembly") or [], chunks)
+        self._collect_verbal_text(context.get("semantic_cues") or {}, chunks)
+        self._collect_verbal_text(context.get("xrefs") or {}, chunks)
+        self._collect_verbal_text(context.get("focus") or {}, chunks)
+        joined = " ".join(chunks)
+        return re.sub(r"\s+", " ", joined).lower()[:22000]
+
     def _verbal_profile(self, analysis: Dict[str, Any]) -> str:
         context = self.current_context or {}
         cues = context.get("semantic_cues") if isinstance(context.get("semantic_cues"), dict) else {}
@@ -3432,19 +3493,25 @@ class MainWidget(QtWidgets.QWidget):
             " ".join(str(item) for item in (analysis.get("behavior") or [])[:4]) if isinstance(analysis.get("behavior"), list) else "",
             hint,
         ]).lower()
+        evidence_text = self._verbal_evidence_text(analysis)
+        full_text = "%s %s %s" % (category, summary_text, evidence_text)
         if context.get("mode") == "data" or context.get("data_artifact"):
             return "data"
-        if any(token in category + " " + summary_text for token in ("identity", "player name", "player-name", "account", "profile")):
+        if any(token in full_text for token in ("drawindexed", "drawindexedinstanced", "drawindexed(", "draw indexed", "drawcall", "draw call")):
+            return "draw"
+        if any(token in full_text for token in ("present(", "swapchain", "swap chain", "render target", "raster", "vertex buffer", "index buffer")):
+            return "draw"
+        if any(token in full_text for token in ("identity", "player name", "player-name", "account", "profile")):
             return "identity"
-        if any(token in category + " " + summary_text for token in ("network", "packet", "bitstream", "deserialize", "parser", "stream")):
+        if any(token in full_text for token in ("network", "packet", "bitstream", "deserialize", "parser", "stream")):
             return "parser"
-        if any(token in category + " " + summary_text for token in ("damage", "health", "hit", "stat", "modifier", "multiplier")):
+        if any(token in full_text for token in ("damage", "health", "hit", "stat", "modifier", "multiplier")):
             return "stat"
-        if any(token in category + " " + summary_text for token in ("inventory", "item", "stack", "resource", "ammo", "currency")):
+        if any(token in full_text for token in ("inventory", "item", "stack", "resource", "ammo", "currency")):
             return "resource"
-        if any(token in category + " " + summary_text for token in ("input", "button", "key", "controller")):
+        if any(token in full_text for token in ("input", "button", "key", "controller")):
             return "input"
-        if any(token in category + " " + summary_text for token in ("render", "camera", "hud", "ui", "menu")):
+        if any(token in full_text for token in ("render", "shader", "camera", "hud", "ui", "menu")):
             return "ui"
         if cues.get("likely_reader_calls"):
             return "parser"
@@ -3498,6 +3565,11 @@ class MainWidget(QtWidgets.QWidget):
                 "It can help map buttons or actions, but it may not be the best place to change gameplay values.",
                 "Trace what gameplay code reacts after this input state is read.",
             ),
+            "draw": (
+                "This function appears to prepare a graphics draw request.",
+                "In plain terms, it updates a drawing setting if needed, then asks the graphics system to draw part of the scene.",
+                "Check who asks for this draw and in which scene state it happens; this is more about rendering than player stats.",
+            ),
             "ui": (
                 "This function appears to support display, UI, camera, or presentation behavior.",
                 "It can explain what the player sees, but it may only be a visual layer.",
@@ -3550,6 +3622,11 @@ class MainWidget(QtWidgets.QWidget):
                 "Elle peut aider a mapper des boutons ou actions, mais ce n'est pas forcement le meilleur endroit pour modifier le gameplay.",
                 "Trace le code de gameplay qui reagit apres la lecture de cette entree.",
             ),
+            "draw": (
+                "Cette fonction semble preparer une demande de dessin graphique.",
+                "En clair, elle met a jour un reglage de dessin si besoin, puis demande au systeme graphique de dessiner une partie de la scene.",
+                "Regarde qui demande ce dessin et dans quel etat de scene cela arrive; c'est plutot du rendu que des stats joueur.",
+            ),
             "ui": (
                 "Cette fonction semble servir l'affichage, l'interface, la camera ou la presentation.",
                 "Elle peut expliquer ce que le joueur voit, mais elle peut n'etre qu'une couche visuelle.",
@@ -3575,10 +3652,14 @@ class MainWidget(QtWidgets.QWidget):
         what, why, next_move = table.get(profile, table["unknown"])
         if language == "French":
             confidence_text = "Confiance: %s. Processus: %s." % (confidence, process)
+            if profile == "draw":
+                confidence_text += " Indice fort: une chaine ou un appel mentionne DrawIndexed/dessin graphique."
             if usefulness in ("high", "medium"):
                 why += " Cette piste merite un test local controle."
         else:
             confidence_text = "Confidence: %s. Process: %s." % (confidence, process)
+            if profile == "draw":
+                confidence_text += " Strong clue: a string or call mentions DrawIndexed/graphics drawing."
             if usefulness in ("high", "medium"):
                 why += " This is worth a controlled local test."
         return {

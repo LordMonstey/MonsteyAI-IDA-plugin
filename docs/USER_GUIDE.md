@@ -248,6 +248,8 @@ After each successful analysis, Monstey opens a small `Simple Summary` popup. It
 
 The default language is English. Use the language selector inside the popup, or `Settings > Popup language`, to switch to French. Disable it with `Settings > Verbal popup`.
 
+The popup also scans raw local clues such as Hex-Rays lines, strings, XREF strings, assembly text, and semantic cues. For example, a function containing `DrawIndexed` is summarized as a graphics draw request instead of a vague unknown helper.
+
 ## IDA Comments And Colors
 
 `Apply Comments + Colors` writes the analysis back into IDA:

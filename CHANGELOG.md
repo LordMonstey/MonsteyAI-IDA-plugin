@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.20 - Better plain summaries for render/draw functions
+
+### Highlights
+
+- The `Simple Summary` popup now reads raw Hex-Rays lines, assembly, strings, XREF strings, and semantic cues instead of relying only on the final AI summary.
+- Added a dedicated graphics draw profile for clues such as `DrawIndexed`, draw calls, swapchains, render targets, vertex buffers, and index buffers.
+- Render/draw summaries now explain in plain words that the function prepares a graphics draw request and asks the graphics system to draw part of the scene.
+- The popup confidence text now cites `DrawIndexed`/graphics drawing as the strong clue when detected.
+
 ## v0.3.19 - Plain verbal summary popup
 
 ### Highlights
