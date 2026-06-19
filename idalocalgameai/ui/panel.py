@@ -244,6 +244,72 @@ class TrainerRadarDialog(QtWidgets.QDialog):
         self.hide()
 
 
+class VerbalSummaryDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("%s - Simple Summary" % PLUGIN_NAME)
+        self.resize(660, 360)
+        self.summary_by_language = {"English": "", "French": ""}
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(7)
+
+        header = QtWidgets.QLabel(
+            "<span style='color:#9bd7ff; font-weight:800;'>Simple verbal summary</span> "
+            "<span style='color:#9aa7b2;'>plain words, no reverse-engineering jargon</span>"
+        )
+        header.setTextFormat(QtCore.Qt.RichText)
+        layout.addWidget(header)
+
+        self.browser = QtWidgets.QTextBrowser()
+        self.browser.setReadOnly(True)
+        self.browser.setOpenExternalLinks(False)
+        self.browser.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
+        )
+        self.browser.setStyleSheet(
+            "QTextBrowser { background:#1b1d20; color:#edf1f5; border:1px solid #3b424a; padding:6px; }"
+        )
+        layout.addWidget(self.browser, 1)
+
+        toolbar = QtWidgets.QHBoxLayout()
+        self.language_combo = QtWidgets.QComboBox()
+        self.language_combo.addItems(["English", "French"])
+        self.language_combo.setToolTip("Default is English. Switch to French when you want a plain FR version.")
+        self.copy_button = QtWidgets.QPushButton("Copy")
+        self.close_button = QtWidgets.QPushButton("Hide")
+        self.language_combo.currentTextChanged.connect(self._render_current)
+        self.copy_button.clicked.connect(self.copy_text)
+        self.close_button.clicked.connect(self.hide)
+        toolbar.addWidget(QtWidgets.QLabel("Language"))
+        toolbar.addWidget(self.language_combo)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self.copy_button)
+        toolbar.addWidget(self.close_button)
+        layout.addLayout(toolbar)
+
+    def set_summaries(self, english: str, french: str, language: str = "English") -> None:
+        self.summary_by_language = {
+            "English": english or "",
+            "French": french or english or "",
+        }
+        idx = self.language_combo.findText(language if language in ("English", "French") else "English")
+        self.language_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._render_current()
+
+    def _render_current(self) -> None:
+        language = self.language_combo.currentText() or "English"
+        text = self.summary_by_language.get(language) or self.summary_by_language.get("English") or ""
+        self.browser.setHtml(text)
+
+    def copy_text(self) -> None:
+        QtWidgets.QApplication.clipboard().setText(self.browser.toPlainText())
+
+    def closeEvent(self, event) -> None:
+        event.ignore()
+        self.hide()
+
+
 class MonsteyMadeOverlay(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -412,6 +478,7 @@ class MainWidget(QtWidgets.QWidget):
         self.focus_indicator_timer.timeout.connect(self._refresh_focus_indicator)
         self.debug_dialog = None
         self.trainer_radar_dialog = None
+        self.verbal_summary_dialog = None
         self.idb_hooks = MonsteyIDBHooks(self)
         try:
             self.idb_hooks.hook()
@@ -1271,6 +1338,11 @@ class MainWidget(QtWidgets.QWidget):
         self.auto_rename_check.setToolTip("After each successful analysis, apply suggested_function_name if it passes local validation.")
         self.auto_comment_check = QtWidgets.QCheckBox("Apply AI comments and colors automatically")
         self.auto_comment_check.setToolTip("After each successful analysis, write bounded AI comments and evidence colors into IDA.")
+        self.verbal_summary_popup_check = QtWidgets.QCheckBox("Show simple verbal summary after each analysis")
+        self.verbal_summary_popup_check.setToolTip("Opens a small plain-language explanation popup after analysis. It does not call the LLM again.")
+        self.verbal_summary_language_combo = QtWidgets.QComboBox()
+        self.verbal_summary_language_combo.addItems(["English", "French"])
+        self.verbal_summary_language_combo.setToolTip("Default is English. French gives a plain translated version of the same summary.")
         self.game_research_check = QtWidgets.QCheckBox("Use minimal cached online lookup")
         self.game_research_check.setToolTip("Uses the process/dump name and IDB strings to fetch a small cached context.")
         self.global_string_scan_check = QtWidgets.QCheckBox("Scan global IDB strings for process hints")
@@ -1323,6 +1395,8 @@ class MainWidget(QtWidgets.QWidget):
         layout.addRow("", self._subsection_label("Automation"))
         layout.addRow("Auto rename", self.auto_rename_check)
         layout.addRow("Auto comments/colors", self.auto_comment_check)
+        layout.addRow("Verbal popup", self.verbal_summary_popup_check)
+        layout.addRow("Popup language", self.verbal_summary_language_combo)
 
         self.config_path_label = QtWidgets.QLabel(config_path())
         self.config_path_label.setTextFormat(QtCore.Qt.PlainText)
@@ -1407,6 +1481,9 @@ class MainWidget(QtWidgets.QWidget):
         self.max_xref_expansion_spin.setValue(int(self.cfg.max_xref_expansion_items))
         self.auto_rename_check.setChecked(bool(self.cfg.auto_rename_after_analysis))
         self.auto_comment_check.setChecked(bool(self.cfg.auto_comment_after_analysis))
+        self.verbal_summary_popup_check.setChecked(bool(getattr(self.cfg, "show_verbal_summary_popup", True)))
+        idx_lang = self.verbal_summary_language_combo.findText(str(getattr(self.cfg, "verbal_summary_language", "English")))
+        self.verbal_summary_language_combo.setCurrentIndex(idx_lang if idx_lang >= 0 else 0)
         self.game_research_check.setChecked(bool(self.cfg.enable_game_research))
         self.global_string_scan_check.setChecked(bool(self.cfg.enable_global_string_scan))
         self.auto_toolchain_check.setChecked(bool(getattr(self.cfg, "auto_toolchain_scouts", True)))
@@ -1461,6 +1538,8 @@ class MainWidget(QtWidgets.QWidget):
             "auto_rename_after_analysis": bool(self.auto_rename_check.isChecked()),
             "auto_comment_after_analysis": bool(self.auto_comment_check.isChecked()),
             "auto_toolchain_scouts": bool(self.auto_toolchain_check.isChecked()),
+            "show_verbal_summary_popup": bool(self.verbal_summary_popup_check.isChecked()),
+            "verbal_summary_language": self.verbal_summary_language_combo.currentText(),
             "enable_game_research": bool(self.game_research_check.isChecked()),
             "enable_global_string_scan": bool(self.global_string_scan_check.isChecked()),
             "game_research_ttl_days": int(self.game_research_ttl_spin.value()),
@@ -1479,6 +1558,8 @@ class MainWidget(QtWidgets.QWidget):
             bits.append("rename")
         if bool(getattr(self.cfg, "auto_comment_after_analysis", True)):
             bits.append("comments")
+        if bool(getattr(self.cfg, "show_verbal_summary_popup", True)):
+            bits.append("plain summary")
         provider = "Gemini" if getattr(self.cfg, "provider", "local") == "gemini" else "Local"
         text = "LLM: %s | Agents: %s | Auto: %s" % (
             provider,
@@ -3237,6 +3318,8 @@ class MainWidget(QtWidgets.QWidget):
         can_experiment = bool(self.current_context and self.current_context.get("has_function"))
         self.btn_call_returns.setEnabled(can_experiment)
         self.btn_hook_modify.setEnabled(can_experiment)
+        if bool(getattr(self.cfg, "show_verbal_summary_popup", True)):
+            self._show_verbal_summary_popup(analysis)
 
     def _on_analysis_failed(self, message: str) -> None:
         self._stop_analysis_debug_timer()
@@ -3316,6 +3399,234 @@ class MainWidget(QtWidgets.QWidget):
                     table_item.setToolTip("Jump to 0x%X" % address)
                 self.evidence_table.setItem(row, col, table_item)
         self.evidence_table.resizeColumnsToContents()
+
+    def _plain_confidence_label(self, analysis: Dict[str, Any], language: str) -> str:
+        try:
+            confidence = float(analysis.get("confidence") or 0.0)
+        except Exception:
+            confidence = 0.0
+        if language == "French":
+            if confidence >= 0.72:
+                return "assez solide"
+            if confidence >= 0.45:
+                return "probable, mais a verifier"
+            return "incertain"
+        if confidence >= 0.72:
+            return "fairly solid"
+        if confidence >= 0.45:
+            return "likely, but worth checking"
+        return "uncertain"
+
+    def _verbal_profile(self, analysis: Dict[str, Any]) -> str:
+        context = self.current_context or {}
+        cues = context.get("semantic_cues") if isinstance(context.get("semantic_cues"), dict) else {}
+        trainer = analysis.get("trainer_assessment") if isinstance(analysis.get("trainer_assessment"), dict) else {}
+        radar = analysis.get("trainer_radar") if isinstance(analysis.get("trainer_radar"), dict) else {}
+        category = str(radar.get("category") or trainer.get("category") or "").lower()
+        hint = ""
+        analyst = context.get("analyst_context") if isinstance(context.get("analyst_context"), dict) else {}
+        if analyst:
+            hint = str(analyst.get("user_hypothesis") or "").lower()
+        summary_text = " ".join([
+            str(analysis.get("summary") or ""),
+            " ".join(str(item) for item in (analysis.get("behavior") or [])[:4]) if isinstance(analysis.get("behavior"), list) else "",
+            hint,
+        ]).lower()
+        if context.get("mode") == "data" or context.get("data_artifact"):
+            return "data"
+        if any(token in category + " " + summary_text for token in ("identity", "player name", "player-name", "account", "profile")):
+            return "identity"
+        if any(token in category + " " + summary_text for token in ("network", "packet", "bitstream", "deserialize", "parser", "stream")):
+            return "parser"
+        if any(token in category + " " + summary_text for token in ("damage", "health", "hit", "stat", "modifier", "multiplier")):
+            return "stat"
+        if any(token in category + " " + summary_text for token in ("inventory", "item", "stack", "resource", "ammo", "currency")):
+            return "resource"
+        if any(token in category + " " + summary_text for token in ("input", "button", "key", "controller")):
+            return "input"
+        if any(token in category + " " + summary_text for token in ("render", "camera", "hud", "ui", "menu")):
+            return "ui"
+        if cues.get("likely_reader_calls"):
+            return "parser"
+        if cues.get("output_layout_writes") and cues.get("numeric_ops"):
+            return "stat"
+        if cues.get("dirty_masks"):
+            return "state"
+        if cues.get("bitwise_or_checksum_ops"):
+            return "check"
+        return "unknown"
+
+    def _simple_summary_parts(self, analysis: Dict[str, Any], language: str) -> Dict[str, str]:
+        profile = self._verbal_profile(analysis)
+        context = self.current_context or {}
+        radar = analysis.get("trainer_radar") if isinstance(analysis.get("trainer_radar"), dict) else {}
+        usefulness = str(radar.get("usefulness") or "").lower()
+        confidence = self._plain_confidence_label(analysis, language)
+        process = "-"
+        game_ctx = context.get("game_context") if isinstance(context.get("game_context"), dict) else {}
+        if game_ctx:
+            process = str(game_ctx.get("process_display") or game_ctx.get("process_name") or game_ctx.get("selected_candidate") or "-")
+
+        en = {
+            "data": (
+                "This is not active code. It is a stored value or text clue that other code may use.",
+                "It helps you find the real place where this feature is handled.",
+                "Open the code that references this value, then analyze that code instead.",
+            ),
+            "identity": (
+                "This function appears to prepare player or profile identity information for the game.",
+                "It is useful for understanding who an entity is, but it is probably not a direct gameplay value to change.",
+                "Follow the code that uses the prepared identity data and see where it connects to live entities.",
+            ),
+            "parser": (
+                "This function appears to unpack structured information and turn it into a cleaner form for the game.",
+                "It is useful for mapping fields and understanding data flow, but changing it directly can be fragile.",
+                "First learn which later code uses the unpacked result, then choose a safer place to test changes.",
+            ),
+            "stat": (
+                "This function appears to calculate or adjust a gameplay value.",
+                "It may combine a base value with modifiers, then prepare the result for another part of the game.",
+                "Test it during one controlled event, compare the value before and after, and only then decide whether it is a good trainer target.",
+            ),
+            "resource": (
+                "This function appears to deal with a count, resource, item, or stack-like value.",
+                "It may help track where the game updates something the player owns or spends.",
+                "Watch it during a controlled item/resource change and confirm which value actually moves.",
+            ),
+            "input": (
+                "This function appears to be related to player input or control state.",
+                "It can help map buttons or actions, but it may not be the best place to change gameplay values.",
+                "Trace what gameplay code reacts after this input state is read.",
+            ),
+            "ui": (
+                "This function appears to support display, UI, camera, or presentation behavior.",
+                "It can explain what the player sees, but it may only be a visual layer.",
+                "Check whether changing this affects only visuals or also the underlying game state.",
+            ),
+            "state": (
+                "This function appears to mark or update some internal game state.",
+                "It may tell the game that something changed, while another function does the real work.",
+                "Find the code that reacts to this state change before testing modifications here.",
+            ),
+            "check": (
+                "This function appears to check, decode, or validate a value.",
+                "It may protect data consistency rather than directly control gameplay.",
+                "Identify what value is being checked and who uses the checked result.",
+            ),
+            "unknown": (
+                "This function does something measurable, but the current evidence does not name its role clearly yet.",
+                "It is a lead, not a final answer.",
+                "Follow the nearest caller or callee and look for a clearer gameplay value or event.",
+            ),
+        }
+        fr = {
+            "data": (
+                "Ce n'est pas du code actif. C'est une valeur ou un texte stocke que d'autres parties du programme peuvent utiliser.",
+                "C'est utile comme indice pour trouver le vrai endroit ou cette fonctionnalite est geree.",
+                "Ouvre le code qui reference cette valeur, puis analyse ce code a la place.",
+            ),
+            "identity": (
+                "Cette fonction semble preparer des informations d'identite de joueur ou de profil pour le jeu.",
+                "C'est utile pour comprendre qui est une entite, mais ce n'est probablement pas une valeur de gameplay a modifier directement.",
+                "Suis le code qui utilise ces donnees d'identite et regarde ou elles se connectent aux entites en jeu.",
+            ),
+            "parser": (
+                "Cette fonction semble decomposer des informations structurees pour les rendre utilisables par le jeu.",
+                "C'est utile pour cartographier les champs et le flux de donnees, mais la modifier directement peut etre fragile.",
+                "Trouve d'abord quel code utilise le resultat, puis choisis un endroit plus sur pour tester une modification.",
+            ),
+            "stat": (
+                "Cette fonction semble calculer ou ajuster une valeur de gameplay.",
+                "Elle peut combiner une valeur de base avec des modificateurs, puis preparer le resultat pour une autre partie du jeu.",
+                "Teste-la pendant un evenement controle, compare la valeur avant/apres, puis decide si c'est une bonne cible trainer.",
+            ),
+            "resource": (
+                "Cette fonction semble toucher a une quantite, une ressource, un objet ou une pile.",
+                "Elle peut aider a trouver ou le jeu met a jour quelque chose que le joueur possede ou depense.",
+                "Observe-la pendant un changement controle de ressource et confirme quelle valeur bouge vraiment.",
+            ),
+            "input": (
+                "Cette fonction semble liee aux entrees du joueur ou a l'etat des controles.",
+                "Elle peut aider a mapper des boutons ou actions, mais ce n'est pas forcement le meilleur endroit pour modifier le gameplay.",
+                "Trace le code de gameplay qui reagit apres la lecture de cette entree.",
+            ),
+            "ui": (
+                "Cette fonction semble servir l'affichage, l'interface, la camera ou la presentation.",
+                "Elle peut expliquer ce que le joueur voit, mais elle peut n'etre qu'une couche visuelle.",
+                "Verifie si une modification change seulement le visuel ou aussi l'etat reel du jeu.",
+            ),
+            "state": (
+                "Cette fonction semble marquer ou mettre a jour un etat interne du jeu.",
+                "Elle peut simplement signaler qu'une chose a change, pendant qu'une autre fonction fait le vrai travail.",
+                "Trouve le code qui reagit a ce changement d'etat avant de tester une modification ici.",
+            ),
+            "check": (
+                "Cette fonction semble verifier, decoder ou valider une valeur.",
+                "Elle sert peut-etre a garder les donnees coherentes plutot qu'a controler directement le gameplay.",
+                "Identifie quelle valeur est verifiee et quel code utilise le resultat.",
+            ),
+            "unknown": (
+                "Cette fonction fait quelque chose d'observable, mais les preuves actuelles ne nomment pas encore clairement son role.",
+                "C'est une piste, pas une conclusion finale.",
+                "Suis le caller ou le callee le plus proche et cherche une valeur ou un evenement de gameplay plus clair.",
+            ),
+        }
+        table = fr if language == "French" else en
+        what, why, next_move = table.get(profile, table["unknown"])
+        if language == "French":
+            confidence_text = "Confiance: %s. Processus: %s." % (confidence, process)
+            if usefulness in ("high", "medium"):
+                why += " Cette piste merite un test local controle."
+        else:
+            confidence_text = "Confidence: %s. Process: %s." % (confidence, process)
+            if usefulness in ("high", "medium"):
+                why += " This is worth a controlled local test."
+        return {
+            "what": what,
+            "why": why,
+            "next": next_move,
+            "confidence": confidence_text,
+        }
+
+    def _verbal_summary_html(self, analysis: Dict[str, Any], language: str) -> str:
+        parts = self._simple_summary_parts(analysis, language)
+        if language == "French":
+            labels = {
+                "what": "En mots simples",
+                "why": "Pourquoi c'est utile",
+                "next": "Prochaine action",
+                "confidence": "Niveau de confiance",
+            }
+        else:
+            labels = {
+                "what": "In simple words",
+                "why": "Why it matters",
+                "next": "Next move",
+                "confidence": "Confidence",
+            }
+        blocks = []
+        for key, color in (("what", "#9bd7ff"), ("why", "#9af2b2"), ("next", "#ffd58a"), ("confidence", "#d2b6ff")):
+            blocks.append(
+                "<div style='margin:7px 0; padding:8px; background:#20252a; border:1px solid #333b44; border-left:3px solid %s;'>"
+                "<div style='color:%s; font-weight:800; margin-bottom:4px;'>%s</div>"
+                "<div style='line-height:1.42; color:#edf1f5;'>%s</div></div>"
+                % (color, color, html.escape(labels[key]), html.escape(parts[key]))
+            )
+        return (
+            "<html><body style='font-family:Segoe UI, Arial; background:#1b1d20; color:#edf1f5;'>"
+            "%s</body></html>" % "".join(blocks)
+        )
+
+    def _show_verbal_summary_popup(self, analysis: Dict[str, Any]) -> None:
+        if self.verbal_summary_dialog is None:
+            self.verbal_summary_dialog = VerbalSummaryDialog(self)
+        language = str(getattr(self.cfg, "verbal_summary_language", "English") or "English")
+        english = self._verbal_summary_html(analysis, "English")
+        french = self._verbal_summary_html(analysis, "French")
+        self.verbal_summary_dialog.set_summaries(english, french, language)
+        self.verbal_summary_dialog.show()
+        self.verbal_summary_dialog.raise_()
+        self.verbal_summary_dialog.activateWindow()
 
     def _open_action_lab(self, action_kind: str) -> None:
         if not self.current_context or not self.current_analysis:

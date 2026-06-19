@@ -25,6 +25,7 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **Automatic sidecar scouts:** suspicious ASM/obfuscation contexts can trigger the right sidecar scout during analysis, before the Evidence Pack and LLM prompt are built.
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
 - **Evidence-specific trainer guidance:** vague hook text is filtered and rebuilt from concrete IDA cues such as output slots, offsets, reader widths, mode selectors, dirty masks, callers, strings, and bitwise operations.
+- **Plain-language popup:** after each analysis, a small EN-by-default popup explains what the function appears to do in normal words, with a French switch available.
 - **IDA symbiote actions:** Monstey can jump to the exact AI focus, jump from XREF report cards, highlight addresses, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
 - **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
 - **Pleasant workflow layer:** animated analysis pipeline, lightweight status toasts, and a persistent Review Queue make long LLM passes easier to follow.
@@ -248,6 +249,10 @@ Setup notes:
   - repeated generic hook-effect wording is filtered out;
   - `Hook effect`, `Good for`, and experiments are rebuilt from concrete local cues when the model is vague;
   - empty Radar fallbacks now tell you what evidence is missing and where to inspect next.
+- Plain verbal summary popup v0.3.19:
+  - each successful analysis opens a small simple-language explanation window;
+  - default language is English, with a French switch in the popup and in settings;
+  - generation uses the existing analysis/cues and does not add another LLM request.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;

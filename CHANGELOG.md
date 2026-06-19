@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.19 - Plain verbal summary popup
+
+### Highlights
+
+- Added a small automatic popup after each successful analysis with a plain-language explanation of what the function appears to do.
+- The popup avoids reverse-engineering jargon and focuses on `what it does`, `why it matters`, `next move`, and confidence.
+- Default language is English, with an in-popup switch to French.
+- Added settings: `Verbal popup` and `Popup language`.
+- The popup is generated from the existing analysis and local cues, so it does not add another LLM call.
+
 ## v0.3.18 - Evidence-specific trainer wording
 
 ### Highlights

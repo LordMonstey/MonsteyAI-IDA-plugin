@@ -180,6 +180,8 @@ function Write-PluginConfig {
         $Data["max_analysis_tokens"] = 1300
         $Data["enable_global_string_scan"] = $false
         $Data["auto_toolchain_scouts"] = $true
+        $Data["show_verbal_summary_popup"] = $true
+        $Data["verbal_summary_language"] = "English"
     }
     if ($DryRun) {
         Write-Step "DryRun: would write config to $Path"

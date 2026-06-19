@@ -242,6 +242,12 @@ Trainer Radar avoids generic hook advice. If the model gives vague text, Monstey
 
 When there is not enough evidence, the Radar should say what is missing and where to inspect next instead of pretending the current function is useful.
 
+## Simple Verbal Summary Popup
+
+After each successful analysis, Monstey opens a small `Simple Summary` popup. It explains the function in plain words: what it appears to do, why it matters, what to check next, and how confident the analysis is.
+
+The default language is English. Use the language selector inside the popup, or `Settings > Popup language`, to switch to French. Disable it with `Settings > Verbal popup`.
+
 ## IDA Comments And Colors
 
 `Apply Comments + Colors` writes the analysis back into IDA:

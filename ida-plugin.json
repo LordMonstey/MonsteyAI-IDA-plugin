@@ -4,7 +4,7 @@
   "plugin": {
     "name": "MonsteyAI-IDA-plugin",
     "entryPoint": "idalocalgameai_plugin.py",
-    "version": "0.3.18",
+    "version": "0.3.19",
     "idaVersions": [
       "9.0"
     ],
