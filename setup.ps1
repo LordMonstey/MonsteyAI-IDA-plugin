@@ -179,6 +179,7 @@ function Write-PluginConfig {
         $Data["analysis_timeout_seconds"] = 45
         $Data["max_analysis_tokens"] = 1300
         $Data["enable_global_string_scan"] = $false
+        $Data["auto_toolchain_scouts"] = $true
     }
     if ($DryRun) {
         Write-Step "DryRun: would write config to $Path"

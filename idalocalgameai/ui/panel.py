@@ -1272,6 +1272,8 @@ class MainWidget(QtWidgets.QWidget):
         self.game_research_check.setToolTip("Uses the process/dump name and IDB strings to fetch a small cached context.")
         self.global_string_scan_check = QtWidgets.QCheckBox("Scan global IDB strings for process hints")
         self.global_string_scan_check.setToolTip("Can trigger IDA 'Generating a list of strings' on large dumps. Leave off for faster analysis.")
+        self.auto_toolchain_check = QtWidgets.QCheckBox("Auto sidecar scouts when useful")
+        self.auto_toolchain_check.setToolTip("During LLM analysis, automatically run bounded sidecar scouts when ASM/obfuscation/file evidence suggests they are useful.")
         self.game_research_ttl_spin = QtWidgets.QSpinBox()
         self.game_research_ttl_spin.setRange(1, 90)
         self.game_research_ttl_spin.setSuffix(" days")
@@ -1312,6 +1314,7 @@ class MainWidget(QtWidgets.QWidget):
         layout.addRow("Engine profile", self.engine_combo)
         layout.addRow("Process lookup", self.game_research_check)
         layout.addRow("Global strings", self.global_string_scan_check)
+        layout.addRow("Sidecar scouts", self.auto_toolchain_check)
         layout.addRow("Lookup cache TTL", self.game_research_ttl_spin)
 
         layout.addRow("", self._subsection_label("Automation"))
@@ -1403,6 +1406,7 @@ class MainWidget(QtWidgets.QWidget):
         self.auto_comment_check.setChecked(bool(self.cfg.auto_comment_after_analysis))
         self.game_research_check.setChecked(bool(self.cfg.enable_game_research))
         self.global_string_scan_check.setChecked(bool(self.cfg.enable_global_string_scan))
+        self.auto_toolchain_check.setChecked(bool(getattr(self.cfg, "auto_toolchain_scouts", True)))
         self.game_research_ttl_spin.setValue(int(self.cfg.game_research_ttl_days))
         idx = self.engine_combo.findText(self.cfg.engine_profile)
         self.engine_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -1453,6 +1457,7 @@ class MainWidget(QtWidgets.QWidget):
             "max_xref_expansion_items": int(self.max_xref_expansion_spin.value()),
             "auto_rename_after_analysis": bool(self.auto_rename_check.isChecked()),
             "auto_comment_after_analysis": bool(self.auto_comment_check.isChecked()),
+            "auto_toolchain_scouts": bool(self.auto_toolchain_check.isChecked()),
             "enable_game_research": bool(self.game_research_check.isChecked()),
             "enable_global_string_scan": bool(self.global_string_scan_check.isChecked()),
             "game_research_ttl_days": int(self.game_research_ttl_spin.value()),
@@ -3209,10 +3214,11 @@ class MainWidget(QtWidgets.QWidget):
             if timings:
                 runtime = analysis.get("runtime_timing") or {}
                 self._set_status(
-                    "Analysis ready | %s | context %.2fs | scout %.2fs | analyst %.2fs | decompile %.2fs | xrefs %.2fs | expand %.2fs%s"
+                    "Analysis ready | %s | context %.2fs | sidecar %.2fs | xref %.2fs | analyst %.2fs | decompile %.2fs | xrefs %.2fs | expand %.2fs%s"
                     % (
                         str(runtime.get("agent_mode") or getattr(self.cfg, "agent_mode", "Single")),
                         float(timings.get("total_context") or 0.0),
+                        float(runtime.get("toolchain_seconds") or 0.0),
                         float(runtime.get("xref_agent_seconds") or 0.0),
                         float(runtime.get("llm_seconds") or 0.0),
                         float(timings.get("decompile") or 0.0),

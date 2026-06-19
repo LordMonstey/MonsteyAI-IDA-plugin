@@ -18,6 +18,7 @@ MonsteyAI-IDA-plugin should feel less like a chatbot next to IDA and more like a
 - IDA rename events refresh Monstey context labels and global/data names.
 - Optional analysis toolchain sidecar keeps Capstone/LIEF/YARA/Unicorn/Miasm/angr outside IDAPython.
 - Obfuscation Scout emits flattening, opaque-predicate, indirect-branch, bitwise-mix, and magic-constant evidence into Evidence Sources.
+- Automatic sidecar scouts trigger during LLM analysis when suspicious ASM/obfuscation context makes them useful.
 
 ## High-Impact Next Moves
 

@@ -5,6 +5,15 @@ from __future__ import annotations
 from typing import Any, Dict
 
 
+_JUMP_MNEMONICS = {
+    "ja", "jae", "jb", "jbe", "jc", "je", "jg", "jge", "jl", "jle",
+    "jmp", "jna", "jnae", "jnb", "jnbe", "jnc", "jne", "jng", "jnge",
+    "jnl", "jnle", "jno", "jnp", "jns", "jnz", "jo", "jp", "jpe",
+    "jpo", "js", "jz",
+}
+_BITWISE_MNEMONICS = {"xor", "or", "and", "rol", "ror", "rcl", "rcr", "shl", "shr", "sar", "sal"}
+
+
 def _dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -24,6 +33,110 @@ def xref_expansion_count(context: Dict[str, Any]) -> int:
     callers = expansion.get("callers") if isinstance(expansion.get("callers"), list) else []
     callees = expansion.get("callees") if isinstance(expansion.get("callees"), list) else []
     return len(callers) + len(callees)
+
+
+def _list(value: Any) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _asm_rows(context: Dict[str, Any]) -> list:
+    ctx = _dict(context)
+    asm = ctx.get("assembly")
+    if isinstance(asm, dict):
+        rows = _list(asm.get("lines") or asm.get("rows"))
+    else:
+        rows = _list(asm)
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _mnemonic(row: Dict[str, Any]) -> str:
+    text = str(row.get("mnemonic") or "").strip().lower()
+    if text:
+        return text
+    disasm = str(row.get("disasm") or row.get("text") or "").strip().lower()
+    return disasm.split(None, 1)[0] if disasm else ""
+
+
+def _disasm(row: Dict[str, Any]) -> str:
+    return str(row.get("disasm") or row.get("text") or "").lower()
+
+
+def toolchain_policy(cfg: Any, context: Dict[str, Any]) -> Dict[str, Any]:
+    """Decide whether optional sidecar tools should enrich the analysis context."""
+    if not bool(getattr(cfg, "auto_toolchain_scouts", True)):
+        return {"enabled": False, "scout": "none", "reason": "auto sidecar scouts disabled in settings", "timeout": 0}
+
+    ctx = _dict(context)
+    if ctx.get("mode") == "data" or str(ctx.get("region_kind") or "").startswith("data"):
+        return {"enabled": False, "scout": "none", "reason": "data/string focus does not need binary toolchain scouts", "timeout": 0}
+
+    depth = analysis_depth(getattr(cfg, "analysis_depth", "Fast"))
+    mode = str(ctx.get("mode") or "")
+    perf = _dict(ctx.get("performance_budget"))
+    metrics = _dict(perf.get("function_metrics"))
+    rows = _asm_rows(ctx)
+    row_count = len(rows)
+    jump_count = len([row for row in rows if _mnemonic(row) in _JUMP_MNEMONICS])
+    bitwise_count = len([row for row in rows if _mnemonic(row) in _BITWISE_MNEMONICS])
+    indirect_count = len([
+        row for row in rows
+        if _mnemonic(row) in ("jmp", "call") and "[" in _disasm(row) and "]" in _disasm(row)
+    ])
+    jump_ratio = 0.0
+    try:
+        jump_ratio = float(metrics.get("jump_ratio") or 0.0)
+    except Exception:
+        jump_ratio = 0.0
+    if not jump_ratio and row_count:
+        jump_ratio = float(jump_count) / float(max(1, row_count))
+
+    reasons = []
+    score = 0
+    if bool(metrics.get("flattening_hint")):
+        score += 3
+        reasons.append("IDA context marked flattening/control-flow risk")
+    if jump_ratio >= 0.25 and row_count >= 18:
+        score += 2
+        reasons.append("high branch density %.2f" % jump_ratio)
+    if indirect_count:
+        score += 2
+        reasons.append("%d indirect branch/call candidate(s)" % indirect_count)
+    if bitwise_count >= 4:
+        score += 1
+        reasons.append("%d bitwise/rotate/shift instruction(s)" % bitwise_count)
+    if mode in ("asm_fallback", "pseudocode_reconstructed"):
+        score += 1
+        reasons.append("%s mode benefits from structured operand evidence" % mode)
+    if bool(perf.get("pseudocode_skipped")):
+        score += 1
+        reasons.append("Hex-Rays pseudocode skipped by budget/failure")
+
+    has_file = bool(_dict(ctx.get("database")).get("input_file"))
+    if score >= 2:
+        scout = "all" if depth == "Deep" and has_file else "obfuscation"
+        timeout = 14 if depth == "Fast" else 22 if depth == "Balanced" else 35
+        return {
+            "enabled": True,
+            "scout": scout,
+            "reason": "; ".join(reasons[:5]) or "suspicious bounded ASM shape",
+            "timeout": timeout,
+            "score": score,
+        }
+    if depth == "Deep" and has_file and mode != "pseudocode":
+        return {
+            "enabled": True,
+            "scout": "all",
+            "reason": "Deep analysis can afford file/metadata/rule sidecar scouts",
+            "timeout": 35,
+            "score": score,
+        }
+    return {
+        "enabled": False,
+        "scout": "none",
+        "reason": "no strong obfuscation/toolchain trigger in bounded context",
+        "timeout": 0,
+        "score": score,
+    }
 
 
 def agent_policy(cfg: Any, context: Dict[str, Any]) -> Dict[str, Any]:

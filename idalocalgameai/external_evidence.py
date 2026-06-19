@@ -360,6 +360,40 @@ def external_evidence_payload(database: Dict[str, Any], text: str, context: Dict
     return payload
 
 
+def merge_external_evidence_text(payload: Dict[str, Any], text: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Merge generated sidecar/tool evidence into an existing prompt payload."""
+    context = context or {}
+    base = dict(payload) if isinstance(payload, dict) else {}
+    existing = _as_list(base.get("items"))
+    new_items = parse_external_evidence(text)
+    merged: List[Dict[str, Any]] = []
+    seen = set()
+    for item in existing + new_items:
+        if not isinstance(item, dict):
+            continue
+        key = (
+            str(item.get("source") or "").lower(),
+            str(item.get("kind") or "").lower(),
+            str(item.get("address") or "").lower(),
+            _clean(item.get("text"), 700).lower(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    ranked = sorted(merged, key=lambda row: _rank_item(row, context), reverse=True)
+    matched = [item for item in ranked if _item_matches_context(item, context)]
+    selected = (matched or ranked)[:80]
+    out = dict(base)
+    out["present"] = bool(merged)
+    out["updated_at"] = round(time.time(), 3)
+    out["summary"] = evidence_summary(merged)
+    out["matched_count"] = len(matched)
+    out["items"] = selected
+    out["analysis_text"] = build_static_analysis_text(out, context)
+    return out
+
+
 def build_static_analysis_text(payload: Dict[str, Any], context: Dict[str, Any] = None) -> List[str]:
     items = _as_list(payload.get("items"))
     out: List[str] = []

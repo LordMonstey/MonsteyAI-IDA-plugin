@@ -22,6 +22,7 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **ASM pseudo rebuild:** when Hex-Rays cannot produce pseudocode, Monstey can rebuild an approximate pseudo-C workspace from selected/focused ASM and analyze that with the original addresses as evidence.
 - **Static-first reverse context:** decompiler text, assembly, bytes, strings, XREFs, comments, data refs, external evidence, and per-process memory are joined before prompting.
 - **Optional analysis toolchain:** a separate sidecar can use Capstone, LIEF, YARA, Unicorn, Miasm, angr, and manually installed Triton without importing heavy libraries into IDAPython.
+- **Automatic sidecar scouts:** suspicious ASM/obfuscation contexts can trigger the right sidecar scout during analysis, before the Evidence Pack and LLM prompt are built.
 - **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
 - **IDA symbiote actions:** Monstey can jump to the exact AI focus, highlight it, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
 - **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
@@ -119,6 +120,7 @@ Setup notes:
 - `Integrations > Toolchain Check` verifies optional sidecar libraries without loading them into IDA.
 - `Integrations > Obfuscation Scout` adds evidence for flattening candidates, opaque predicates, indirect branches, bitwise mixes, and magic constants.
 - `Integrations > Run Toolchain Scouts` adds Capstone/LIEF/YARA evidence when the sidecar libraries are installed.
+- During normal LLM analysis, `Auto sidecar scouts when useful` can run the sidecar automatically if Monstey sees ASM fallback, reconstructed pseudocode, skipped decompilation, high branch density, flattening hints, indirect branches, or bitwise-heavy code.
 - Pre-analysis hypothesis prompt: tell the AI what you think the function does, or let it analyze solo.
 - Extract assembly, bytes, calls, callers, data refs, strings, comments, and engine hints.
 - Expand nearby callers/callees through XREFs for extra role context.
@@ -236,6 +238,11 @@ Setup notes:
   - `Obfuscation Scout` emits evidence rows for flattened/dispatcher-like control flow, opaque predicates, indirect branches, bitwise mixes, and magic constants;
   - `Run Toolchain Scouts` adds Capstone operand/control-flow evidence, LIEF PE metadata, and custom YARA matches when installed;
   - `setup.ps1 -InstallToolchain -ToolchainTier Core|Advanced|Full` prepares the sidecar venv; Core includes Capstone, LIEF, YARA, Unicorn, and Miasm.
+- Automatic sidecar scouts v0.3.16:
+  - LLM analysis can auto-run the sidecar when the current context looks obfuscated or lacks trustworthy pseudocode;
+  - sidecar evidence is merged before Evidence Pack and prompt construction, so the model can cite it normally;
+  - Debug Trace shows trigger/skip reason, selected scout, timeout, row count, and timing;
+  - Settings includes `Sidecar scouts` to toggle the automation.
 - Optimization pass v0.3.1:
   - prompt payloads are sent as compact JSON to reduce token overhead;
   - process/game lookup uses an in-memory cache in addition to disk cache;

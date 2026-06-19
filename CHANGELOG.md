@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.16 - Automatic sidecar scouts
+
+### Highlights
+
+- Sidecar scouts can now run automatically during LLM analysis when the current context needs them.
+- Auto policy detects ASM fallback, reconstructed pseudocode, skipped Hex-Rays pseudocode, high branch density, flattening hints, indirect branches/calls, and bitwise-heavy blocks.
+- Automatic sidecar evidence is merged into `External Evidence Sources` before the Evidence Pack and LLM prompt are built.
+- Debug Trace now shows why `auto_toolchain_scout` ran or why it was skipped.
+- Final status includes sidecar timing.
+- Added `Settings > Reverse Context > Sidecar scouts` to enable/disable the automation.
+
 ## v0.3.15 - Optional analysis toolchain sidecar
 
 ### Highlights

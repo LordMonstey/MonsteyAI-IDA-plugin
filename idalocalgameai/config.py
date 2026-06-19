@@ -98,6 +98,7 @@ class PluginConfig:
     max_analysis_tokens: int = 1300
     auto_rename_after_analysis: bool = True
     auto_comment_after_analysis: bool = True
+    auto_toolchain_scouts: bool = True
     enable_game_research: bool = True
     enable_global_string_scan: bool = False
     game_research_ttl_days: int = 14
@@ -130,6 +131,7 @@ class PluginConfig:
         cfg.max_analysis_tokens = as_int(cfg.max_analysis_tokens, defaults.max_analysis_tokens)
         cfg.auto_rename_after_analysis = as_bool(cfg.auto_rename_after_analysis)
         cfg.auto_comment_after_analysis = as_bool(cfg.auto_comment_after_analysis)
+        cfg.auto_toolchain_scouts = as_bool(cfg.auto_toolchain_scouts)
         cfg.enable_game_research = as_bool(cfg.enable_game_research)
         cfg.enable_global_string_scan = as_bool(cfg.enable_global_string_scan)
         cfg.game_research_ttl_days = as_int(cfg.game_research_ttl_days, defaults.game_research_ttl_days)

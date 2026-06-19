@@ -425,6 +425,18 @@ For custom YARA rules, place `.yar` or `.yara` files in:
 %USERPROFILE%\.monstey-ai-plugin\yara
 ```
 
+Automatic sidecar scouts:
+
+When `Settings > Reverse Context > Sidecar scouts` is enabled, normal LLM analysis can call the sidecar before the Evidence Pack and prompt are built. Monstey auto-runs the sidecar when the focused context shows signs such as:
+
+- ASM fallback or reconstructed pseudocode;
+- Hex-Rays pseudocode skipped by budget/failure;
+- high branch density or flattening hint;
+- indirect jump/call through memory;
+- bitwise-heavy code with XOR/AND/OR/shift/rotate patterns.
+
+Fast/Balanced suspicious contexts usually run the bounded `obfuscation` scout. Deep analysis may run `all` when file metadata/rules are useful. The Debug Trace shows the trigger, selected scout, timeout, row count, and elapsed time. If no trigger is found, Debug Trace says the sidecar was skipped.
+
 ## Sanitization
 
 Text imported from external static tools is sanitized before it reaches prompts:

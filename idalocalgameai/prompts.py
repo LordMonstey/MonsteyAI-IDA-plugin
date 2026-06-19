@@ -491,6 +491,7 @@ def compact_analysis_context(context: Dict[str, Any]) -> Dict[str, Any]:
     metrics = _dict(performance.get("function_metrics"))
     known_map = _dict(context.get("known_game_map"))
     external = _dict(context.get("external_evidence"))
+    toolchain_auto = _dict(context.get("toolchain_auto"))
 
     return {
         "compaction": {
@@ -545,6 +546,17 @@ def compact_analysis_context(context: Dict[str, Any]) -> Dict[str, Any]:
                 45,
                 520,
             ),
+        },
+        "toolchain_auto": {
+            "enabled": toolchain_auto.get("enabled"),
+            "status": toolchain_auto.get("status"),
+            "scout": toolchain_auto.get("scout"),
+            "reason": _clip(toolchain_auto.get("reason"), 360),
+            "score": toolchain_auto.get("score"),
+            "elapsed_seconds": toolchain_auto.get("elapsed_seconds"),
+            "row_count": toolchain_auto.get("row_count"),
+            "available_libraries": _list(toolchain_auto.get("available_libraries"))[:10],
+            "error": _clip(toolchain_auto.get("error"), 260),
         },
         "focus": _compact_focus(_dict(context.get("focus"))),
         "decompiler": {

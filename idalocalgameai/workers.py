@@ -8,11 +8,11 @@ import time
 from typing import Any, Dict
 
 from .compat.qt import QtCore, signal
-from .analysis_policy import agent_policy, model_policy, subagent_budget
+from .analysis_policy import agent_policy, model_policy, subagent_budget, toolchain_policy
 from .config import PluginConfig
 from .enrichment import enrich_analysis_with_local_cues
 from .evidence_pack import apply_agent_claim_updates, build_claim_board, build_evidence_pack
-from .external_evidence import apply_external_evidence_to_analysis
+from .external_evidence import apply_external_evidence_to_analysis, merge_external_evidence_text
 from .llm import OpenAICompatClient
 from .prompts import (
     build_action_messages,
@@ -383,6 +383,9 @@ class LLMWorker(QtCore.QThread):
 
             xref_agent_seconds = 0.0
             xref_agent_error = ""
+            toolchain_seconds = 0.0
+            toolchain_error = ""
+            toolchain_auto = {}
             evidence_pack = {}
             claim_board = {}
             if agent_mode == "Single":
@@ -409,6 +412,68 @@ class LLMWorker(QtCore.QThread):
                     "status": "ok",
                     "summary": policy.get("reason"),
                 })
+
+            toolchain_auto = toolchain_policy(active_cfg, self.context)
+            self.context["toolchain_auto"] = toolchain_auto
+            if toolchain_auto.get("enabled"):
+                scout_name = str(toolchain_auto.get("scout") or "obfuscation")
+                timeout = int(toolchain_auto.get("timeout") or 14)
+                self._progress(
+                    "auto_toolchain_scout: trigger=%s | scout=%s | timeout=%ds"
+                    % (str(toolchain_auto.get("reason") or "auto")[:220], scout_name, timeout)
+                )
+                t_tool = time.perf_counter()
+                try:
+                    toolchain_data = toolchain_scout_context(self.context, scout=scout_name, timeout=timeout)
+                    toolchain_seconds = round(time.perf_counter() - t_tool, 3)
+                    evidence_text = str(toolchain_data.get("evidence_text") or "").strip()
+                    row_count = int(toolchain_data.get("row_count") or 0)
+                    if evidence_text:
+                        self.context["external_evidence"] = merge_external_evidence_text(
+                            self.context.get("external_evidence") or {},
+                            evidence_text,
+                            self.context,
+                        )
+                    self.context["toolchain_auto"] = dict(toolchain_auto)
+                    self.context["toolchain_auto"].update({
+                        "status": "ok",
+                        "elapsed_seconds": toolchain_seconds,
+                        "row_count": row_count,
+                        "available_libraries": [
+                            str(item.get("name"))
+                            for item in (toolchain_data.get("libraries") or [])
+                            if isinstance(item, dict) and item.get("available")
+                        ],
+                    })
+                    multi_agent["agents"].append({
+                        "name": "auto_toolchain_scout",
+                        "status": "ok",
+                        "summary": "Ran %s sidecar scout in %.2fs and added %d evidence row(s)."
+                        % (scout_name, toolchain_seconds, row_count),
+                    })
+                    self._progress(
+                        "auto_toolchain_scout: completed in %.2fs; evidence rows=%d"
+                        % (toolchain_seconds, row_count)
+                    )
+                except Exception as exc:
+                    toolchain_seconds = round(time.perf_counter() - t_tool, 3)
+                    toolchain_error = str(exc)
+                    self.context["toolchain_auto"] = dict(toolchain_auto)
+                    self.context["toolchain_auto"].update({"status": "error", "error": toolchain_error[:400]})
+                    multi_agent["agents"].append({
+                        "name": "auto_toolchain_scout",
+                        "status": "error",
+                        "summary": toolchain_error[:300],
+                    })
+                    self._progress("auto_toolchain_scout: failed, continuing without sidecar evidence: %s" % toolchain_error[:180])
+            else:
+                multi_agent["agents"].append({
+                    "name": "auto_toolchain_scout",
+                    "status": "skipped",
+                    "summary": str(toolchain_auto.get("reason") or "no toolchain trigger")[:260],
+                })
+                self._progress("auto_toolchain_scout: skipped (%s)" % str(toolchain_auto.get("reason") or "no trigger")[:180])
+
             if agent_mode in ("Duo", "Council"):
                 self._progress("building shared Evidence Pack and Claim Board")
                 evidence_pack = build_evidence_pack(self.context)
@@ -565,6 +630,9 @@ class LLMWorker(QtCore.QThread):
                 "synthesis_error": synthesis_error,
                 "xref_agent_seconds": xref_agent_seconds,
                 "xref_agent_error": xref_agent_error,
+                "toolchain_seconds": toolchain_seconds,
+                "toolchain_error": toolchain_error,
+                "toolchain_auto": toolchain_auto,
                 "worker_total_seconds": round(time.perf_counter() - t0, 3),
                 "max_analysis_tokens": max_tokens,
                 "analysis_depth": getattr(self.cfg, "analysis_depth", ""),
