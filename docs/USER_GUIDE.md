@@ -53,6 +53,8 @@ Use `Quick Local Pass` when you want an immediate no-LLM pass. It still collects
 
 In `Driver IOCTL` mode, the report shows a dedicated `Driver IOCTL Risk Radar`. It is evidence-first: it should say what is proven, what is only a lead, and what must be verified before calling something a vulnerability.
 
+If `Driver IOCTL` is accidentally left enabled while analyzing a game dump, Monstey applies a profile guard. Without driver/IOCTL evidence or a driver-like target, the current analysis is treated as `Trainer / Modding` and the debug trace records the downgrade.
+
 ## AI Focus Lock
 
 The `AI focus` row shows which address Preview/Analyze will use.

@@ -57,6 +57,7 @@ from ..memory import (
     upsert_review_mark,
 )
 from ..navigation import clear_focus_lock, install_navigation_hooks, navigation_snapshot, preferred_focus_ea
+from ..profile_guard import DRIVER_PROFILE, apply_effective_analysis_profile, is_effective_driver_profile
 from ..pseudodiff import local_pseudocode_diff, render_local_pseudocode_diff_text
 from ..prompts import compact_analysis_context
 from ..sanitize import append_block, read_text_file_safely, sanitize_label, sanitize_text
@@ -2375,12 +2376,9 @@ class MainWidget(QtWidgets.QWidget):
         return self.trainer_radar_dialog
 
     def _current_is_driver_profile(self) -> bool:
-        profile = ""
         if self.current_context:
-            profile = str(self.current_context.get("analysis_profile") or "")
-        if not profile:
-            profile = str(getattr(self.cfg, "analysis_profile", "Trainer / Modding"))
-        return "driver" in profile.lower() or "ioctl" in profile.lower()
+            return is_effective_driver_profile(self.current_context)
+        return str(getattr(self.cfg, "analysis_profile", "Trainer / Modding")) == DRIVER_PROFILE
 
     def _decision_radar_available(self) -> bool:
         if not self.current_analysis:
@@ -3001,7 +2999,8 @@ class MainWidget(QtWidgets.QWidget):
             "worker_total_seconds": 0.0,
             "max_analysis_tokens": 0,
             "analysis_depth": getattr(self.cfg, "analysis_depth", ""),
-            "analysis_profile": getattr(self.cfg, "analysis_profile", "Trainer / Modding"),
+            "analysis_profile": ctx.get("analysis_profile") or getattr(self.cfg, "analysis_profile", "Trainer / Modding"),
+            "requested_analysis_profile": ctx.get("requested_analysis_profile") or getattr(self.cfg, "analysis_profile", "Trainer / Modding"),
             "local_only": bool(local_only),
         }
         return analysis
@@ -3093,7 +3092,10 @@ class MainWidget(QtWidgets.QWidget):
                 return
 
         ctx = self.current_context
-        ctx["analysis_profile"] = getattr(self.cfg, "analysis_profile", "Trainer / Modding")
+        apply_effective_analysis_profile(ctx, getattr(self.cfg, "analysis_profile", "Trainer / Modding"))
+        guard = ctx.get("profile_guard") or {}
+        if guard.get("downgraded"):
+            self._append_analysis_log(str(guard.get("reason") or "Driver profile ignored for this focus."), "warn")
         timings = (ctx.get("performance_budget") or {}).get("timings_seconds") or {}
         focus = ctx.get("focus") or {}
         self._append_analysis_log(
@@ -3591,7 +3593,7 @@ class MainWidget(QtWidgets.QWidget):
         ]).lower()
         evidence_text = self._verbal_evidence_text(analysis)
         full_text = "%s %s %s" % (category, summary_text, evidence_text)
-        if "driver" in str(context.get("analysis_profile") or "").lower() or any(
+        driver_tokens_present = any(
             token in full_text
             for token in (
                 "ioctl",
@@ -3602,7 +3604,8 @@ class MainWidget(QtWidgets.QWidget):
                 "mmcopyvirtualmemory",
                 "irp_mj_device_control",
             )
-        ):
+        )
+        if is_effective_driver_profile(context) and driver_tokens_present:
             return "driver_ioctl"
         if context.get("mode") == "data" or context.get("data_artifact"):
             return "data"
@@ -3615,6 +3618,10 @@ class MainWidget(QtWidgets.QWidget):
         if any(token in full_text for token in ("network", "packet", "bitstream", "deserialize", "parser", "stream")):
             return "parser"
         if any(token in full_text for token in ("damage", "health", "hit", "stat", "modifier", "multiplier")):
+            return "stat"
+        if any(token in full_text for token in ("__m128", "_mm_", "xmm", "shuffle_ps", "andnot_ps", "cmpeq_ps")) and any(
+            token in full_text for token in ("a2", "output", "result", "*a2", "float", "vector")
+        ):
             return "stat"
         if any(token in full_text for token in ("inventory", "item", "stack", "resource", "ammo", "currency")):
             return "resource"

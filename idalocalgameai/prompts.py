@@ -557,6 +557,8 @@ def compact_analysis_context(context: Dict[str, Any]) -> Dict[str, Any]:
         },
         "mode": context.get("mode"),
         "analysis_profile": context.get("analysis_profile") or "Trainer / Modding",
+        "requested_analysis_profile": context.get("requested_analysis_profile") or context.get("analysis_profile") or "Trainer / Modding",
+        "profile_guard": context.get("profile_guard") or {},
         "region_kind": context.get("region_kind"),
         "current_ea": context.get("current_ea"),
         "screen_ea": context.get("screen_ea"),
@@ -698,6 +700,7 @@ def build_analysis_messages(context: Dict[str, Any], engine_profile: str) -> lis
         "priority_dump_context": dump_context,
         "requirements": [
             "Selected analysis_profile is '%s'. Adapt priorities and output sections to that profile." % analysis_profile,
+            "If context.profile_guard.downgraded is true, ignore the requested profile and follow the effective analysis_profile. Do not mention Driver IOCTL on game targets without driver/IOCTL evidence.",
             "If analysis_profile is 'Trainer / Modding', keep the existing local game-modding/trainer focus: hook usefulness, values to log, modification surface, and concrete experiments.",
             "If analysis_profile is 'Driver IOCTL', prioritize defensive Windows kernel driver IOCTL audit: dispatch path, IoControlCode selectors, buffer source, transfer method, length/probe checks, copy/map/process-memory primitives, validation gaps, and safe verification steps.",
             "For Driver IOCTL, fill driver_ioctl_assessment, driver_ioctl_radar, driver_ioctl_candidates, and ioctl_experiments. Do not replace them with generic reverse-engineering prose.",

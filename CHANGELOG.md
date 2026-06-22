@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.23 - Profile guardrails for game vs driver analysis
+
+### Fixes
+
+- Added an effective analysis-profile guard so `Driver IOCTL` cannot leak into game-dump analyses unless the target or local evidence actually looks like a Windows driver/IOCTL path.
+- Plain-language summaries no longer claim “Windows driver request path” on game functions just because the global profile was left on `Driver IOCTL`.
+- Generic `memcpy`/`memmove`/`RtlCopyMemory` no longer count as IOCTL read/write primitive evidence by themselves; they only contribute when paired with real driver/IRP/buffer/IOCTL cues.
+- The LLM prompt now includes the requested vs effective profile and explicitly follows the effective profile when the guard downgrades a focus.
+- SIMD/vector math with output writes is treated as a stat/modifier-style game-analysis clue for better plain summaries.
+
 ## v0.3.22 - Driver IOCTL profile and headless IDA actions
 
 ### Highlights

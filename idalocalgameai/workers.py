@@ -15,6 +15,7 @@ from .driver_intel import build_driver_ioctl_intel
 from .evidence_pack import apply_agent_claim_updates, build_claim_board, build_evidence_pack
 from .external_evidence import apply_external_evidence_to_analysis, merge_external_evidence_text
 from .llm import OpenAICompatClient
+from .profile_guard import DRIVER_PROFILE, apply_effective_analysis_profile
 from .prompts import (
     build_action_messages,
     build_analysis_messages,
@@ -41,7 +42,7 @@ DRIVER_REQUIRED_FUNCTION_QUESTIONS = [
 def ensure_function_questions(analysis: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     if not context.get("has_function"):
         return analysis
-    required = DRIVER_REQUIRED_FUNCTION_QUESTIONS if "driver" in str(context.get("analysis_profile") or "").lower() or "ioctl" in str(context.get("analysis_profile") or "").lower() else REQUIRED_FUNCTION_QUESTIONS
+    required = DRIVER_REQUIRED_FUNCTION_QUESTIONS if context.get("analysis_profile") == DRIVER_PROFILE else REQUIRED_FUNCTION_QUESTIONS
     current = analysis.get("next_questions")
     if not isinstance(current, list):
         current = []
@@ -272,6 +273,10 @@ class LLMWorker(QtCore.QThread):
         super().__init__(parent)
         self.cfg = cfg
         self.context = context
+        try:
+            apply_effective_analysis_profile(self.context, getattr(cfg, "analysis_profile", None))
+        except Exception:
+            pass
 
     def _progress(self, message: str) -> None:
         try:

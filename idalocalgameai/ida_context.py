@@ -24,6 +24,7 @@ import idc
 
 from .game_context import collect_game_context
 from .navigation import navigation_snapshot, preferred_focus_ea
+from .profile_guard import apply_effective_analysis_profile
 
 try:
     import ida_hexrays
@@ -53,6 +54,7 @@ BYTE_SELECTOR_RE = re.compile(
     re.IGNORECASE,
 )
 ASM_FLOAT_OP_RE = re.compile(r"\b(addss|subss|mulss|divss|maxss|minss)\b")
+SIMD_VECTOR_OP_RE = re.compile(r"\b(__m128|_mm_[A-Za-z0-9_]+|xmm\d+|shuffle_ps|andnot_ps|cmpeq_ps|and_ps|or_ps)\b", re.IGNORECASE)
 ACCUMULATOR_ASSIGN_RE = re.compile(r"\b(v\d+|a\d+\[[^\]]+\])\s*=\s*\1\s*[+\-*/]")
 ASM_FLOAT_MEM_READ_RE = re.compile(
     r"\b(?:addss|subss|mulss|divss|maxss|minss|movss)\s+xmm\d+\s*,\s*(?:dword ptr\s+)?\[([A-Za-z0-9_]+)(?:\+([^\]]+))?\]",
@@ -116,14 +118,16 @@ IOCTL_RW_PRIMITIVE_TOKENS = (
     "zwmapviewofsection",
     "mmmapiospace",
     "mmunmapiospace",
-    "rtlcopymemory",
-    "memcpy",
-    "memmove",
     "read_register",
     "write_register",
     "physicalmemory",
     "virtualaddress",
     "writewhatwhere",
+)
+GENERIC_COPY_TOKENS = (
+    "rtlcopymemory",
+    "memcpy",
+    "memmove",
 )
 IOCTL_METHOD_TOKENS = (
     "method_buffered",
@@ -1037,12 +1041,13 @@ def collect_semantic_cues(
             or "(float)" in text
             or "float *" in text
             or ASM_FLOAT_OP_RE.search(low)
+            or SIMD_VECTOR_OP_RE.search(text)
             or ACCUMULATOR_ASSIGN_RE.search(text)
         ):
             numeric_ops.append({
                 "line": text[:260],
                 "address": item.get("address") or "",
-                "meaning": "float/numeric accumulator or modifier candidate",
+                "meaning": "float/SIMD numeric accumulator or modifier candidate",
             })
 
         selector_match = BYTE_SELECTOR_RE.search(text)
@@ -1110,7 +1115,19 @@ def collect_semantic_cues(
                 "meaning": "buffer/probe/status validation cue",
             })
 
-        if any(token in low for token in IOCTL_RW_PRIMITIVE_TOKENS):
+        strong_driver_memory = any(token in low for token in IOCTL_RW_PRIMITIVE_TOKENS)
+        generic_driver_copy = (
+            any(token in low for token in GENERIC_COPY_TOKENS)
+            and (
+                any(token in low for token in IOCTL_BUFFER_TOKENS)
+                or any(token in low for token in DRIVER_API_TOKENS)
+                or IOCTL_CODE_RE.search(text)
+                or ioctl_code_checks
+                or ioctl_buffer_access
+                or driver_api_calls
+            )
+        )
+        if strong_driver_memory or generic_driver_copy:
             ioctl_rw_primitives.append({
                 "line": text[:260],
                 "address": item.get("address") or "",
@@ -1443,8 +1460,9 @@ def collect_context(force_asm: bool = False, cfg: Any = None) -> Dict[str, Any]:
     mark("engine_hints", t)
     timings["total_context"] = round(time.perf_counter() - t0, 3)
 
-    return {
+    context = {
         "mode": mode,
+        "requested_analysis_profile": getattr(cfg, "analysis_profile", "Trainer / Modding"),
         "analysis_profile": getattr(cfg, "analysis_profile", "Trainer / Modding"),
         "region_kind": region_kind,
         "current_ea": fmt_ea(ea),
@@ -1484,3 +1502,5 @@ def collect_context(force_asm: bool = False, cfg: Any = None) -> Dict[str, Any]:
             else "Hex-Rays pseudocode is available"
         ],
     }
+    apply_effective_analysis_profile(context, getattr(cfg, "analysis_profile", "Trainer / Modding"))
+    return context

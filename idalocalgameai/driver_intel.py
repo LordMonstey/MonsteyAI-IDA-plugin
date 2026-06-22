@@ -5,6 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
+from .profile_guard import DRIVER_PROFILE, driver_cue_count, effective_analysis_profile
+
+
+FALSE_DRIVER_RE = re.compile(r"\b(driver|ioctl|irp|deviceiocontrol|systembuffer|type3inputbuffer|mmcopyvirtualmemory)\b", re.IGNORECASE)
+
 
 def _as_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -116,8 +121,7 @@ def _surface(cues: Dict[str, Any]) -> str:
 
 
 def _risk_score(context: Dict[str, Any], cues: Dict[str, Any]) -> int:
-    profile = str(context.get("analysis_profile") or "").lower()
-    score = 12 if "driver" in profile or "ioctl" in profile else 0
+    score = 12 if effective_analysis_profile(context) == DRIVER_PROFILE else 0
     score += min(22, len(_as_list(cues.get("ioctl_code_checks"))) * 6)
     score += min(20, len(_as_list(cues.get("ioctl_buffer_access"))) * 6)
     score += min(18, len(_as_list(cues.get("driver_api_calls"))) * 3)
@@ -432,23 +436,39 @@ def _append_evidence(analysis: Dict[str, Any], radar: Dict[str, Any], candidates
             seen.add(key)
 
 
+def _clear_false_driver_language(analysis: Dict[str, Any], context: Dict[str, Any]) -> None:
+    if driver_cue_count(context) > 0:
+        return
+    summary = _clean(analysis.get("summary"), 500)
+    if not summary or not FALSE_DRIVER_RE.search(summary):
+        return
+    cues = _as_dict(context.get("semantic_cues"))
+    if _as_list(cues.get("numeric_ops")):
+        analysis["summary"] = "Computes or filters numeric/vector output values from local game data; unsupported cyber-mode wording was ignored by the profile guard."
+    elif _as_list(cues.get("output_layout_writes")):
+        analysis["summary"] = "Prepares or fills output fields from local game data; unsupported cyber-mode wording was ignored by the profile guard."
+    else:
+        analysis["summary"] = "Game-analysis focus restored by the profile guard; no driver/IOCTL evidence is present in this context."
+    risks = analysis.get("risks")
+    if not isinstance(risks, list):
+        risks = []
+    _append_unique(risks, "Profile guard removed unsupported driver/IOCTL wording because the target and focused context have no driver evidence.", 10)
+    analysis["risks"] = risks
+
+
 def build_driver_ioctl_intel(analysis: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """Attach defensive IOCTL audit intelligence when the profile or cues warrant it."""
     if not isinstance(analysis, dict):
         return analysis
     cues = _as_dict(context.get("semantic_cues"))
-    profile = str(context.get("analysis_profile") or "").lower()
+    if effective_analysis_profile(context) != DRIVER_PROFILE:
+        for key in ("driver_ioctl_assessment", "driver_ioctl_candidates", "driver_ioctl_radar", "ioctl_experiments"):
+            analysis.pop(key, None)
+        _clear_false_driver_language(analysis, context)
+        return analysis
     likelihood = str(cues.get("driver_ioctl_likelihood") or "none").lower()
-    cue_count = sum(len(_as_list(cues.get(key))) for key in (
-        "driver_api_calls",
-        "ioctl_code_checks",
-        "ioctl_buffer_access",
-        "ioctl_validation_checks",
-        "ioctl_rw_primitives",
-        "ioctl_method_hints",
-        "driver_strings",
-    ))
-    if "driver" not in profile and "ioctl" not in profile and likelihood == "none" and cue_count == 0:
+    cue_count = driver_cue_count(context)
+    if likelihood == "none" and cue_count == 0:
         return analysis
 
     score = _risk_score(context, cues)

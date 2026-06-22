@@ -46,6 +46,8 @@ Roadmap: [IDA Symbiote Roadmap](docs/SYMBIOTE_ROADMAP.md)
 
 Driver mode is designed for audit and lab validation. It reports evidence, validation gaps, and safe verification steps; it does not generate exploit payloads or bypass logic.
 
+Monstey applies a profile guard before prompting: if `Driver IOCTL` is selected while the loaded target and local cues do not look like a driver/IOCTL path, the current analysis is downgraded to `Trainer / Modding` and the debug trace explains why.
+
 Target for this MVP:
 
 - IDA v9.0.240925
