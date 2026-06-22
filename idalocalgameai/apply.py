@@ -6,11 +6,17 @@ import re
 from typing import Any, Dict, List, Optional
 
 import ida_bytes
+import ida_funcs
 import ida_name
 import idaapi
 import idc
 
 from .schemas import validate_function_name
+
+try:
+    import ida_hexrays
+except Exception:
+    ida_hexrays = None
 
 
 def parse_ea(value: Any) -> int:
@@ -102,6 +108,8 @@ KIND_ITEM_COLORS = {
     "candidate": rgb(38, 92, 54),
     "experiment": rgb(42, 78, 96),
     "structure": rgb(92, 48, 72),
+    "ioctl": rgb(82, 44, 72),
+    "driver_candidate": rgb(64, 48, 84),
     "note": rgb(62, 66, 70),
 }
 
@@ -151,6 +159,123 @@ def set_ai_comment(ea: int, text: str) -> bool:
     return bool(idc.set_cmt(ea, merge_ai_comment(ea, text), 0))
 
 
+def _merge_pseudocode_comment(cfunc: Any, loc: Any, text: str) -> str:
+    ai_text = "AI: " + text.strip()
+    existing = ""
+    try:
+        retrieve = getattr(ida_hexrays, "RETRIEVE_ALWAYS", 1) if ida_hexrays is not None else 1
+        existing = cfunc.get_user_cmt(loc, retrieve) or ""
+    except Exception:
+        existing = ""
+    if not existing:
+        return ai_text
+    lines = [line for line in str(existing).splitlines() if not line.strip().startswith("AI:")]
+    lines.append(ai_text)
+    return "\n".join(line for line in lines if line.strip())
+
+
+def _pseudocode_comment_locations(cfunc: Any, func: Any, ea: int) -> List[Any]:
+    locations: List[Any] = []
+    seen = set()
+
+    def add(candidate_ea: Any, itp: Any) -> None:
+        try:
+            candidate = int(candidate_ea)
+        except Exception:
+            return
+        if candidate in (0, getattr(idaapi, "BADADDR", -1)):
+            return
+        key = (candidate, int(itp))
+        if key in seen:
+            return
+        try:
+            loc = ida_hexrays.treeloc_t()
+            loc.ea = candidate
+            loc.itp = itp
+            locations.append(loc)
+            seen.add(key)
+        except Exception:
+            return
+
+    itp_values = []
+    for name in ("ITP_BLOCK1", "ITP_SEMI", "ITP_CURLY1", "ITP_ASM"):
+        value = getattr(ida_hexrays, name, None)
+        if value is not None:
+            itp_values.append(value)
+    if not itp_values:
+        itp_values = [0]
+
+    candidate_eas = [ea]
+    try:
+        closest = cfunc.body.find_closest_addr(int(ea))
+        if closest is not None:
+            candidate_eas.append(getattr(closest, "ea", None))
+    except Exception:
+        pass
+    try:
+        treeitems = getattr(cfunc, "treeitems", None)
+        if treeitems is not None:
+            best_ea = None
+            best_delta = None
+            for idx in range(len(treeitems)):
+                item = treeitems[idx]
+                item_ea = int(getattr(item, "ea", getattr(idaapi, "BADADDR", -1)))
+                if item_ea in (0, getattr(idaapi, "BADADDR", -1)):
+                    continue
+                delta = abs(item_ea - int(ea))
+                if best_delta is None or delta < best_delta:
+                    best_delta = delta
+                    best_ea = item_ea
+            candidate_eas.append(best_ea)
+    except Exception:
+        pass
+    try:
+        candidate_eas.append(int(func.start_ea))
+    except Exception:
+        pass
+
+    for candidate in candidate_eas:
+        for itp in itp_values:
+            add(candidate, itp)
+    return locations
+
+
+def set_pseudocode_comment(ea: int, text: str) -> bool:
+    """Write a Hex-Rays pseudocode user comment when the decompiler is available."""
+    if ida_hexrays is None:
+        return False
+    text = str(text or "").strip()
+    if not text:
+        return False
+    if len(text) > 900:
+        text = text[:900] + "..."
+    try:
+        func = ida_funcs.get_func(int(ea))
+        if not func:
+            return False
+        cfunc = ida_hexrays.decompile(func)
+        if not cfunc:
+            return False
+        for loc in _pseudocode_comment_locations(cfunc, func, int(ea)):
+            try:
+                cfunc.set_user_cmt(loc, _merge_pseudocode_comment(cfunc, loc, text))
+                cfunc.save_user_cmts()
+                try:
+                    ida_hexrays.mark_cfunc_dirty(int(func.start_ea), False)
+                except Exception:
+                    pass
+                try:
+                    ida_hexrays.refresh_pseudocode(int(func.start_ea), 0)
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False
+
+
 def mark_review_item(ea: int, note: str = "") -> Dict[str, Any]:
     text = str(note or "").strip()
     if not text:
@@ -179,8 +304,9 @@ def apply_colored_annotations(
             summary = str(analysis.get("summary") or "").strip()
             if summary:
                 ok_comment = set_ai_comment(ea, "Summary: " + summary)
+                ok_pseudo = set_pseudocode_comment(ea, "Summary: " + summary)
                 ok_color = set_item_color(ea, confidence_color(analysis.get("confidence")))
-                results.append({"ok": bool(ok_comment or ok_color), "message": "Summary annotation %s" % ("0x%X" % ea)})
+                results.append({"ok": bool(ok_comment or ok_pseudo or ok_color), "message": "Summary annotation %s%s" % ("0x%X" % ea, " + pseudocode" if ok_pseudo else "")})
         except Exception:
             pass
 
@@ -197,8 +323,9 @@ def apply_colored_annotations(
             if not text:
                 continue
             ok_comment = set_ai_comment(ea, text)
+            ok_pseudo = set_pseudocode_comment(ea, text)
             ok_color = set_item_color(ea, confidence_color(item.get("confidence")))
-            results.append({"ok": bool(ok_comment or ok_color), "message": "Comment/color %s" % ("0x%X" % ea)})
+            results.append({"ok": bool(ok_comment or ok_pseudo or ok_color), "message": "Comment/color %s%s" % ("0x%X" % ea, " + pseudocode" if ok_pseudo else "")})
 
     evidence = analysis.get("evidence") or []
     if isinstance(evidence, list):
@@ -216,7 +343,10 @@ def apply_colored_annotations(
             ok_comment = False
             if text:
                 ok_comment = set_ai_comment(ea, "Evidence [%s]: %s" % (kind, text))
-            results.append({"ok": bool(ok_color or ok_comment), "message": "Evidence color %s %s" % (kind, "0x%X" % ea)})
+            ok_pseudo = False
+            if text and len(results) < max_comments + 10:
+                ok_pseudo = set_pseudocode_comment(ea, "Evidence [%s]: %s" % (kind, text))
+            results.append({"ok": bool(ok_color or ok_comment or ok_pseudo), "message": "Evidence color %s %s%s" % (kind, "0x%X" % ea, " + pseudocode" if ok_pseudo else "")})
 
     return results or [{"ok": False, "message": "No AI annotations to apply"}]
 

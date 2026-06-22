@@ -26,6 +26,10 @@ EXPECTED_KEYS = {
     "trainer_assessment",
     "trainer_radar",
     "trainer_candidates",
+    "driver_ioctl_assessment",
+    "driver_ioctl_radar",
+    "driver_ioctl_candidates",
+    "ioctl_experiments",
     "hook_experiments",
     "xref_graph",
     "structure_hypotheses",
@@ -97,6 +101,23 @@ def normalize_analysis(obj: Dict[str, Any]) -> Dict[str, Any]:
     })
     out.setdefault("trainer_radar", {})
     out.setdefault("trainer_candidates", [])
+    out.setdefault("driver_ioctl_assessment", {
+        "risk": "unknown",
+        "category": "unknown",
+        "risk_reason": "",
+        "ioctl_surface": "unknown",
+        "transfer_method": "unknown",
+        "buffer_sources": [],
+        "validation_gaps": [],
+        "rw_primitive_indicators": [],
+        "values_to_verify": [],
+        "safe_test_plan": [],
+        "not_enough_evidence": [],
+        "stability_notes": [],
+    })
+    out.setdefault("driver_ioctl_radar", {})
+    out.setdefault("driver_ioctl_candidates", [])
+    out.setdefault("ioctl_experiments", [])
     out.setdefault("hook_experiments", [])
     out.setdefault("xref_graph", {})
     out.setdefault("structure_hypotheses", [])
@@ -159,6 +180,43 @@ def normalize_analysis(obj: Dict[str, Any]) -> Dict[str, Any]:
         out["trainer_radar"] = {}
     if not isinstance(out.get("trainer_candidates"), list):
         out["trainer_candidates"] = []
+    if not isinstance(out.get("driver_ioctl_assessment"), dict):
+        out["driver_ioctl_assessment"] = {
+            "risk": "unknown",
+            "category": "unknown",
+            "risk_reason": str(out.get("driver_ioctl_assessment") or ""),
+            "ioctl_surface": "unknown",
+            "transfer_method": "unknown",
+            "buffer_sources": [],
+            "validation_gaps": [],
+            "rw_primitive_indicators": [],
+            "values_to_verify": [],
+            "safe_test_plan": [],
+            "not_enough_evidence": [],
+            "stability_notes": [],
+        }
+    else:
+        for key, default in (
+            ("risk", "unknown"),
+            ("category", "unknown"),
+            ("risk_reason", ""),
+            ("ioctl_surface", "unknown"),
+            ("transfer_method", "unknown"),
+            ("buffer_sources", []),
+            ("validation_gaps", []),
+            ("rw_primitive_indicators", []),
+            ("values_to_verify", []),
+            ("safe_test_plan", []),
+            ("not_enough_evidence", []),
+            ("stability_notes", []),
+        ):
+            out["driver_ioctl_assessment"].setdefault(key, default)
+    if not isinstance(out.get("driver_ioctl_radar"), dict):
+        out["driver_ioctl_radar"] = {}
+    if not isinstance(out.get("driver_ioctl_candidates"), list):
+        out["driver_ioctl_candidates"] = []
+    if not isinstance(out.get("ioctl_experiments"), list):
+        out["ioctl_experiments"] = []
     if not isinstance(out.get("hook_experiments"), list):
         out["hook_experiments"] = []
     if not isinstance(out.get("xref_graph"), dict):

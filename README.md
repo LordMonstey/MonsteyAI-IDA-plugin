@@ -8,7 +8,7 @@
 [![Windows](https://img.shields.io/badge/Windows-x86__64-ffd36a)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
 
-Local-first AI assistant for IDA Pro + Hex-Rays, focused on game-modding reverse engineering.
+Local-first AI assistant for IDA Pro + Hex-Rays, focused on game-modding reverse engineering and defensive driver IOCTL auditing.
 
 Monstey is built for the moment where raw decompiler output is not enough: red/non-decompilable regions, anonymous `sub_...` forests, dump-to-dump drift, XREF-heavy behavior, and trainer/modding triage. It keeps the analyst in IDA, follows the current focus, collects bounded evidence, then turns that into names, comments, hook experiments, and structure hypotheses.
 
@@ -23,10 +23,12 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **Static-first reverse context:** decompiler text, assembly, bytes, strings, XREFs, comments, data refs, external evidence, and per-process memory are joined before prompting.
 - **Optional analysis toolchain:** a separate sidecar can use Capstone, LIEF, YARA, Unicorn, Miasm, angr, and manually installed Triton without importing heavy libraries into IDAPython.
 - **Automatic sidecar scouts:** suspicious ASM/obfuscation contexts can trigger the right sidecar scout during analysis, before the Evidence Pack and LLM prompt are built.
-- **Trainer/modding radar:** every result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
+- **Profile switch:** choose `Trainer / Modding` or `Driver IOCTL` so Monstey changes analysis priorities instead of mixing workflows.
+- **Trainer/modding radar:** every trainer result answers what happens if you hook it, whether it is useful, what to log first, and what experiment to run next.
+- **Driver IOCTL radar:** defensive driver mode maps IOCTL selectors, request buffers, transfer methods, validation gates, and memory copy/map/process primitives before claiming a vulnerability.
 - **Evidence-specific trainer guidance:** vague hook text is filtered and rebuilt from concrete IDA cues such as output slots, offsets, reader widths, mode selectors, dirty masks, callers, strings, and bitwise operations.
 - **Plain-language popup:** after each analysis, a small EN-by-default popup explains what the function appears to do in normal words, with a French switch available.
-- **IDA symbiote actions:** Monstey can jump to the exact AI focus, jump from XREF report cards, highlight addresses, apply names/comments/colors, and mark review points directly in the IDB while you navigate.
+- **IDA symbiote actions:** Monstey can jump to the exact AI focus, jump from XREF report cards, highlight addresses, apply names/comments/colors, mark review points, and run right-click headless analyses directly in the IDB while you navigate.
 - **LordMonstey Made branding:** the panel opens with a short `LordMonstey Made That` signature animation and a permanent header badge.
 - **Pleasant workflow layer:** animated analysis pipeline, lightweight status toasts, and a persistent Review Queue make long LLM passes easier to follow.
 - **Local-first but provider-flexible:** Ollama/LM Studio/vLLM or Gemini hosted through an OpenAI-compatible API.
@@ -34,6 +36,15 @@ Monstey is built for the moment where raw decompiler output is not enough: red/n
 - **Plug-and-play setup:** one setup command installs the plugin, configures local defaults, prepares the launcher, and can bootstrap Ollama.
 
 Roadmap: [IDA Symbiote Roadmap](docs/SYMBIOTE_ROADMAP.md)
+
+## Analysis profiles
+
+`Settings > Analysis profile` controls the brain Monstey uses for the next analysis:
+
+- `Trainer / Modding`: game-focused triage, hook usefulness, values to log, modification surfaces, structure hypotheses, and trainer experiments.
+- `Driver IOCTL`: defensive Windows driver auditing, focused on IOCTL dispatch, `IoControlCode` switches, IRP/request buffers, transfer method hints, length/probe/access validation, and copy/map/process-memory primitives.
+
+Driver mode is designed for audit and lab validation. It reports evidence, validation gaps, and safe verification steps; it does not generate exploit payloads or bypass logic.
 
 Target for this MVP:
 
@@ -132,6 +143,8 @@ Setup notes:
 - Right-click `MonsteyAI-Rebuild Pseudocode` in IDA views to send the current ASM focus directly into the rebuild workspace.
 - Track recent IDA navigation, mouse hover/click, pseudocode cursor, highlighted identifier, active widget, and nearby focused assembly.
 - Right-click `MonsteyAI-Analyse` action in IDA views.
+- Right-click `MonsteyAI-Analyse` can run without opening the main panel; the Simple Summary popup appears when the analysis finishes.
+- Right-click `MonsteyAI-Analyze + Rename` analyzes the focused item and applies a valid suggested name when the current function still has an IDA default name like `sub_...`.
 - Opening signature overlay: `LordMonstey Made That`.
 - Visible `Process:` label in the panel header so you can confirm the cleaned dump/process context before trusting the answer.
 - `Mark Review` writes a Monstey review comment and color marker directly at the current AI focus inside IDA.
@@ -151,10 +164,11 @@ Setup notes:
 - Preview summary, clickable evidence, risks, game relevance, and suggested comments.
 - Auto-rename functions after analysis when `suggested_function_name` is valid.
 - Auto-rename is conservative and only applies automatically to IDA-generated names such as `sub_7FF...`; use `Apply Name` to overwrite analyst names.
-- Auto-apply bounded `AI:` comments and color highlights directly into the IDA listing.
+- Auto-apply bounded `AI:` comments and color highlights directly into the IDA listing, and also write Hex-Rays pseudocode user comments when the decompiler accepts them.
 - Header automation badge showing whether auto rename/comments are enabled.
 - Settings are grouped by LLM, context budget, reverse context, and automation.
-- Force function analyses to include `Lets call it and see the returns` and `Lets hook it and modify something` in Next questions.
+- `Settings > Analysis profile` switches between `Trainer / Modding` and `Driver IOCTL`.
+- Trainer-profile function analyses include `Lets call it and see the returns` and `Lets hook it and modify something` in Next questions; Driver IOCTL profile swaps those for defensive IOCTL mapping/validation questions.
 - `Action Lab` chat plus a dedicated Code Workspace for turning an analysis into a local `__fastcall` call harness or MinHook-style hook scaffold.
 - Apply suggested function name only after confirmation.
 - Apply suggested comments only after confirmation.
@@ -177,6 +191,7 @@ Setup notes:
 - Agent council UI shows scout contributions and the context-only finalization policy so drift is visible.
 - `Trainer Target Radar` adds a local deterministic trainer/modding decision layer after every analysis: score, verdict, role, strategy, modification surface, next move, hook effect, log-first fields, good-for/not-good-for, and validation experiments.
 - Dedicated `Trainer Radar` popup window renders the trainer/modding workspace in a larger copyable view.
+- Dedicated `IOCTL Radar` popup renders the defensive driver audit workspace in a larger copyable view when `Driver IOCTL` profile is active.
 - `Trainer Candidates` ranks the current function plus nearby callers/callees as practical hook/mapping candidates.
 - `Hook Experiments` generates observe/log/compare/mutation-gated experiment plans that are reused by Action Lab.
 - `XREF Evidence Map` shows callers/current/callees with scores and recommended next XREF targets; function names and addresses are clickable and jump directly into IDA.

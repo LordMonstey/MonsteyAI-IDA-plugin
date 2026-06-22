@@ -63,6 +63,76 @@ ASM_FLOAT_MEM_WRITE_RE = re.compile(
     re.IGNORECASE,
 )
 ASCII_LABEL_RE = re.compile(r"[^A-Za-z0-9_]+")
+IOCTL_CODE_RE = re.compile(
+    r"\b(?:ioctl|iocontrolcode|controlcode|deviceiocontrol|ctl_code|parameters\.deviceiocontrol)\b|"
+    r"\b0x(?:22|800|801|802|803|9C|A0)[0-9A-Fa-f]{3,6}\b",
+    re.IGNORECASE,
+)
+DRIVER_API_TOKENS = (
+    "iocalldriver",
+    "iocreatedevice",
+    "iocreatesymboliclink",
+    "iodeletedevice",
+    "iodeletesymboliclink",
+    "iocreatedevice",
+    "iocompleterequest",
+    "iostacklocation",
+    "getcurrentirpstacklocation",
+    "irp_mj_device_control",
+    "majorfunction",
+    "deviceiocontrol",
+    "dispatchdevicecontrol",
+)
+IOCTL_BUFFER_TOKENS = (
+    "systembuffer",
+    "type3inputbuffer",
+    "userbuffer",
+    "mdladdress",
+    "inputbufferlength",
+    "outputbufferlength",
+    "iostacklocation",
+    "parameters.deviceiocontrol",
+)
+IOCTL_VALIDATION_TOKENS = (
+    "probeforread",
+    "probeforwrite",
+    "mmisaddressvalid",
+    "sehexcept",
+    "__try",
+    "__except",
+    "status_invalid_parameter",
+    "status_buffer_too_small",
+)
+IOCTL_LENGTH_GUARD_RE = re.compile(
+    r"(?:inputbufferlength|outputbufferlength).*(?:==|!=|<=|>=|<|>|\\bcmp\\b|\\btest\\b|status_)|"
+    r"(?:==|!=|<=|>=|<|>|\\bcmp\\b|\\btest\\b|status_).*(?:inputbufferlength|outputbufferlength)",
+    re.IGNORECASE,
+)
+IOCTL_RW_PRIMITIVE_TOKENS = (
+    "mmcopyvirtualmemory",
+    "pslookupprocessbyprocessid",
+    "kestackattachprocess",
+    "keunstackdetachprocess",
+    "zwmapviewofsection",
+    "mmmapiospace",
+    "mmunmapiospace",
+    "rtlcopymemory",
+    "memcpy",
+    "memmove",
+    "read_register",
+    "write_register",
+    "physicalmemory",
+    "virtualaddress",
+    "writewhatwhere",
+)
+IOCTL_METHOD_TOKENS = (
+    "method_buffered",
+    "method_in_direct",
+    "method_out_direct",
+    "method_neither",
+    "irp->associatedirp.systembuffer",
+    "associatedirp.systembuffer",
+)
 
 
 def fmt_ea(ea: int) -> str:
@@ -877,6 +947,12 @@ def collect_semantic_cues(
     bounds_checks: List[Dict[str, Any]] = []
     magic_constants: List[Dict[str, Any]] = []
     sanitization_idioms: List[Dict[str, Any]] = []
+    driver_api_calls: List[Dict[str, Any]] = []
+    ioctl_code_checks: List[Dict[str, Any]] = []
+    ioctl_buffer_access: List[Dict[str, Any]] = []
+    ioctl_validation_checks: List[Dict[str, Any]] = []
+    ioctl_rw_primitives: List[Dict[str, Any]] = []
+    ioctl_method_hints: List[Dict[str, Any]] = []
     seen_magic = set()
 
     for item in lines:
@@ -1006,6 +1082,48 @@ def collect_semantic_cues(
                 "meaning": "read-value-minus-one sentinel/bounds idiom candidate",
             })
 
+        if any(token in low for token in DRIVER_API_TOKENS):
+            driver_api_calls.append({
+                "line": text[:260],
+                "address": item.get("address") or "",
+                "meaning": "Windows driver dispatch/API cue",
+            })
+
+        if IOCTL_CODE_RE.search(text):
+            ioctl_code_checks.append({
+                "line": text[:260],
+                "address": item.get("address") or "",
+                "meaning": "IOCTL code/dispatch selector candidate",
+            })
+
+        if any(token in low for token in IOCTL_BUFFER_TOKENS):
+            ioctl_buffer_access.append({
+                "line": text[:260],
+                "address": item.get("address") or "",
+                "meaning": "IOCTL buffer or IRP stack field access",
+            })
+
+        if any(token in low for token in IOCTL_VALIDATION_TOKENS) or IOCTL_LENGTH_GUARD_RE.search(text):
+            ioctl_validation_checks.append({
+                "line": text[:260],
+                "address": item.get("address") or "",
+                "meaning": "buffer/probe/status validation cue",
+            })
+
+        if any(token in low for token in IOCTL_RW_PRIMITIVE_TOKENS):
+            ioctl_rw_primitives.append({
+                "line": text[:260],
+                "address": item.get("address") or "",
+                "meaning": "kernel read/write or memory copy primitive candidate",
+            })
+
+        if any(token in low for token in IOCTL_METHOD_TOKENS):
+            ioctl_method_hints.append({
+                "line": text[:260],
+                "address": item.get("address") or "",
+                "meaning": "IOCTL transfer method / buffer source cue",
+            })
+
         for literal in integer_literals(text):
             value = int(literal["value"])
             if value <= 255:
@@ -1028,6 +1146,7 @@ def collect_semantic_cues(
                 break
 
     strings = []
+    driver_strings = []
     for s in xrefs.get("strings", [])[:40]:
         if not isinstance(s, dict):
             continue
@@ -1036,12 +1155,39 @@ def collect_semantic_cues(
             continue
         low = value.lower()
         priority = bool(any(token in low for token in ("bungie", "player", "name", "network", "packet", "steam", "account", "id", "clan")))
-        strings.append({
+        row = {
             "address": s.get("address") or "",
             "from": s.get("from") or "",
             "value": value[:240],
             "priority": priority,
-        })
+        }
+        strings.append(row)
+        if any(token in low for token in ("\\device\\", "\\dosdevices\\", "\\\\.\\", "ioctl", "deviceiocontrol", "driver", "kernel")):
+            driver_strings.append(dict(row))
+
+    for c in xrefs.get("callees", [])[:80]:
+        if not isinstance(c, dict):
+            continue
+        name = str(c.get("name") or c.get("to") or "")
+        low = name.lower()
+        if any(token in low for token in DRIVER_API_TOKENS + IOCTL_VALIDATION_TOKENS + IOCTL_RW_PRIMITIVE_TOKENS):
+            driver_api_calls.append({
+                "line": name[:260],
+                "address": c.get("from") or c.get("to") or "",
+                "meaning": "driver/import/callee cue",
+            })
+        if any(token in low for token in IOCTL_RW_PRIMITIVE_TOKENS):
+            ioctl_rw_primitives.append({
+                "line": name[:260],
+                "address": c.get("from") or c.get("to") or "",
+                "meaning": "kernel read/write primitive callee",
+            })
+        if any(token in low for token in IOCTL_VALIDATION_TOKENS):
+            ioctl_validation_checks.append({
+                "line": name[:260],
+                "address": c.get("from") or c.get("to") or "",
+                "meaning": "buffer/probe validation callee",
+            })
 
     grouped = {}
     for call in reader_calls:
@@ -1060,9 +1206,18 @@ def collect_semantic_cues(
     bitstream_score += 1 if strings else 0
     bitstream_likelihood = "high" if bitstream_score >= 5 else "medium" if bitstream_score >= 3 else "low"
 
+    ioctl_score = 0
+    ioctl_score += min(3, len(ioctl_code_checks))
+    ioctl_score += 2 if ioctl_buffer_access else 0
+    ioctl_score += 2 if driver_api_calls else 0
+    ioctl_score += 2 if ioctl_rw_primitives else 0
+    ioctl_score += 1 if driver_strings else 0
+    ioctl_likelihood = "high" if ioctl_score >= 6 else "medium" if ioctl_score >= 3 else "low" if ioctl_score else "none"
+
     return {
         "policy": "heuristics extracted locally before LLM; use as clues, not proof",
         "bitstream_or_structured_reader_likelihood": bitstream_likelihood,
+        "driver_ioctl_likelihood": ioctl_likelihood,
         "likely_reader_calls": likely_readers[:12],
         "reader_call_evidence": reader_calls[:max_items],
         "structure_reads": structure_reads[:max_items],
@@ -1075,6 +1230,13 @@ def collect_semantic_cues(
         "sanitization_idioms": sanitization_idioms[:max_items],
         "magic_constants": magic_constants[:max_items],
         "string_anchors": strings[:max_items],
+        "driver_api_calls": driver_api_calls[:max_items],
+        "ioctl_code_checks": ioctl_code_checks[:max_items],
+        "ioctl_buffer_access": ioctl_buffer_access[:max_items],
+        "ioctl_validation_checks": ioctl_validation_checks[:max_items],
+        "ioctl_rw_primitives": ioctl_rw_primitives[:max_items],
+        "ioctl_method_hints": ioctl_method_hints[:max_items],
+        "driver_strings": driver_strings[:max_items],
         "anti_misread_notes": [
             "Repeated calls with a stream-like first argument and small integer widths often indicate bitstream/file/network deserialization, not memcpy.",
             "Writes to many explicit offsets of an output parameter imply structure population; map offsets before naming behavior.",
@@ -1082,6 +1244,7 @@ def collect_semantic_cues(
             "Byte selector comparisons often describe operation modes; explain the modes mechanically before guessing a system name.",
             "Param/output '|=' operations are dirty/update masks until proven otherwise.",
             "Strings are high-confidence anchors for semantics; prioritize them over generic engine guesses.",
+            "For Windows drivers, IOCTL code dispatch, buffer source, length checks, probes, and copy primitives must be mapped before calling a path vulnerable.",
         ],
     }
 
@@ -1282,6 +1445,7 @@ def collect_context(force_asm: bool = False, cfg: Any = None) -> Dict[str, Any]:
 
     return {
         "mode": mode,
+        "analysis_profile": getattr(cfg, "analysis_profile", "Trainer / Modding"),
         "region_kind": region_kind,
         "current_ea": fmt_ea(ea),
         "screen_ea": fmt_ea(screen_ea),

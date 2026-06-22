@@ -122,6 +122,7 @@ def build_evidence_pack(context: Dict[str, Any]) -> Dict[str, Any]:
         "start_ea": ctx.get("start_ea"),
         "end_ea": ctx.get("end_ea"),
         "mode": ctx.get("mode"),
+        "analysis_profile": ctx.get("analysis_profile"),
         "region_kind": ctx.get("region_kind"),
         "process": game_ctx.get("process_display") or game_ctx.get("process_name") or game_ctx.get("selected_candidate"),
     }
@@ -334,6 +335,36 @@ def build_evidence_pack(context: Dict[str, Any]) -> Dict[str, Any]:
         mode_evidence.append(b.fact("mode_check", _fact_text(item, ["selector", "operator", "value", "address", "line"]), address=item.get("address"), source="semantic_cues", strength="medium"))
     if mode_evidence:
         b.claim("Byte/selector comparisons likely represent operation modes or variants.", mode_evidence[:8], 0.62, category="algorithm")
+
+    ioctl_evidence = []
+    for key, fact_kind, strength in (
+        ("driver_api_calls", "driver_api", "medium"),
+        ("ioctl_code_checks", "ioctl_code", "high"),
+        ("ioctl_buffer_access", "ioctl_buffer", "high"),
+        ("ioctl_validation_checks", "ioctl_validation", "medium"),
+        ("ioctl_rw_primitives", "ioctl_rw_primitive", "high"),
+        ("ioctl_method_hints", "ioctl_method", "medium"),
+        ("driver_strings", "driver_string", "medium"),
+    ):
+        for item in _as_list(cues.get(key))[:10]:
+            item = _as_dict(item)
+            fid = b.fact(
+                fact_kind,
+                _fact_text(item, ["address", "from", "line", "value", "meaning"]),
+                address=item.get("address") or item.get("from"),
+                source="semantic_cues",
+                strength=strength,
+            )
+            if fid:
+                ioctl_evidence.append(fid)
+    if ioctl_evidence:
+        b.claim(
+            "Driver IOCTL audit should map selector, buffer source, validation gates, transfer method, and any memory read/write primitive before claiming a vulnerability.",
+            ioctl_evidence[:12],
+            0.82,
+            category="driver_ioctl",
+            owner="ioctl_scout",
+        )
 
     pack_seed = {
         "subject": subject,

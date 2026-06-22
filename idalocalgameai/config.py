@@ -14,6 +14,7 @@ DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_PROVIDER = "local"
 DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"
+ANALYSIS_PROFILES = ("Trainer / Modding", "Driver IOCTL")
 
 MODEL_PRESETS = [
     {
@@ -86,6 +87,7 @@ class PluginConfig:
     temperature: float = 0.1
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     analysis_timeout_seconds: int = 45
+    analysis_profile: str = "Trainer / Modding"
     engine_profile: str = "Auto"
     max_asm_lines: int = 140
     max_pseudocode_chars: int = 6500
@@ -118,6 +120,13 @@ class PluginConfig:
             cfg.provider = DEFAULT_PROVIDER
         cfg.timeout_seconds = as_int(cfg.timeout_seconds, defaults.timeout_seconds)
         cfg.analysis_timeout_seconds = as_int(cfg.analysis_timeout_seconds, defaults.analysis_timeout_seconds)
+        cfg.analysis_profile = str(cfg.analysis_profile or defaults.analysis_profile).strip()
+        if cfg.analysis_profile not in ANALYSIS_PROFILES:
+            normalized_profile = cfg.analysis_profile.lower().replace("_", " ").replace("-", " ")
+            if "driver" in normalized_profile or "ioctl" in normalized_profile or "kernel" in normalized_profile:
+                cfg.analysis_profile = "Driver IOCTL"
+            else:
+                cfg.analysis_profile = defaults.analysis_profile
         cfg.max_asm_lines = as_int(cfg.max_asm_lines, defaults.max_asm_lines)
         cfg.max_pseudocode_chars = as_int(cfg.max_pseudocode_chars, defaults.max_pseudocode_chars)
         cfg.max_decompile_instructions = as_int(cfg.max_decompile_instructions, defaults.max_decompile_instructions)

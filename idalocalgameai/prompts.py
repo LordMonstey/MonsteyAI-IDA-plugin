@@ -113,6 +113,52 @@ OUTPUT_SCHEMA = {
             "next_action": "what to inspect next",
         }
     ],
+    "driver_ioctl_assessment": {
+        "risk": "critical|high|medium|low|none|unknown",
+        "category": "ioctl_dispatch|buffer_validation|arbitrary_read_write|memory_mapping|process_memory|device_acl|unknown",
+        "risk_reason": "defensive explanation of why this driver path may or may not be vulnerable",
+        "ioctl_surface": "dispatch_table|ioctl_switch|copy_path|mapped_memory|process_memory|unknown",
+        "transfer_method": "METHOD_BUFFERED|METHOD_IN_DIRECT|METHOD_OUT_DIRECT|METHOD_NEITHER|unknown",
+        "buffer_sources": ["SystemBuffer, Type3InputBuffer, UserBuffer, MDL, or IRP stack fields observed"],
+        "validation_gaps": ["missing or weak length/probe/access checks to verify"],
+        "rw_primitive_indicators": ["evidence of arbitrary read/write, copy, map, process attach, or pointer trust"],
+        "values_to_verify": ["IoControlCode, lengths, user pointers, target pid/address/size fields, output length"],
+        "safe_test_plan": ["defensive local lab checks without exploit payloads"],
+        "not_enough_evidence": ["what still prevents a vulnerability conclusion"],
+        "stability_notes": ["kernel crash/data corruption risks for careless testing"],
+    },
+    "driver_ioctl_radar": {
+        "score": 0,
+        "verdict": "short defensive IOCTL audit decision",
+        "strategy_label": "map dispatch|audit buffers|verify primitive|trace caller|low priority",
+        "next_move": "single best defensive next action",
+        "tags": ["ioctl|buffer|rw-primitive|method-neither|validation-gap"],
+        "why_it_matters": ["plain language vulnerability impact if verified"],
+        "evidence": ["addresses, calls, fields, constants, strings"],
+        "verify_first": ["checks to perform before claiming a bug"],
+        "safe_tests": ["non-weaponized local validation steps"],
+    },
+    "driver_ioctl_candidates": [
+        {
+            "score": 0,
+            "function": "name",
+            "address": "0x0",
+            "relation": "current|caller|callee|xref",
+            "role": "dispatch|copy|map|validation|helper|unknown",
+            "risk": "high|medium|low|unknown",
+            "evidence": ["why it is a candidate"],
+            "next_action": "what to inspect next",
+        }
+    ],
+    "ioctl_experiments": [
+        {
+            "title": "Defensive IOCTL audit step",
+            "intent": "why this validation exists",
+            "steps": ["controlled static/dynamic checks, no exploit payload"],
+            "verify": ["fields, lengths, pointers, status codes to verify"],
+            "stop_condition": "when to stop and classify as not enough evidence",
+        }
+    ],
     "hook_experiments": [
         {
             "title": "Observe-only hook",
@@ -434,6 +480,7 @@ def _compact_semantic_cues(cues: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "policy": cues.get("policy"),
         "bitstream_or_structured_reader_likelihood": cues.get("bitstream_or_structured_reader_likelihood"),
+        "driver_ioctl_likelihood": cues.get("driver_ioctl_likelihood"),
         "likely_reader_calls": _compact_rows(cues.get("likely_reader_calls"), ["call", "stream_arg", "widths"], 12, 180),
         "reader_call_evidence": _compact_rows(cues.get("reader_call_evidence"), ["call", "stream_arg", "bit_or_field_width", "address", "line"], 18, 260),
         "structure_reads": _compact_rows(cues.get("structure_reads"), ["base", "offset", "address", "line"], 22, 260),
@@ -446,6 +493,13 @@ def _compact_semantic_cues(cues: Dict[str, Any]) -> Dict[str, Any]:
         "sanitization_idioms": _compact_rows(cues.get("sanitization_idioms"), ["address", "line", "meaning"], 12, 260),
         "magic_constants": _compact_rows(cues.get("magic_constants"), ["constant", "decimal", "address", "line", "meaning"], 16, 260),
         "string_anchors": _compact_rows(cues.get("string_anchors"), ["address", "from", "value", "priority"], 24, 260),
+        "driver_api_calls": _compact_rows(cues.get("driver_api_calls"), ["address", "line", "meaning"], 18, 260),
+        "ioctl_code_checks": _compact_rows(cues.get("ioctl_code_checks"), ["address", "line", "meaning"], 18, 260),
+        "ioctl_buffer_access": _compact_rows(cues.get("ioctl_buffer_access"), ["address", "line", "meaning"], 18, 260),
+        "ioctl_validation_checks": _compact_rows(cues.get("ioctl_validation_checks"), ["address", "line", "meaning"], 18, 260),
+        "ioctl_rw_primitives": _compact_rows(cues.get("ioctl_rw_primitives"), ["address", "line", "meaning"], 18, 260),
+        "ioctl_method_hints": _compact_rows(cues.get("ioctl_method_hints"), ["address", "line", "meaning"], 12, 260),
+        "driver_strings": _compact_rows(cues.get("driver_strings"), ["address", "from", "value", "priority"], 12, 260),
         "anti_misread_notes": [_clip(item, 240) for item in _list(cues.get("anti_misread_notes"))[:6]],
     }
 
@@ -502,6 +556,7 @@ def compact_analysis_context(context: Dict[str, Any]) -> Dict[str, Any]:
             "original_callee_count": len(_list(xrefs.get("callees"))),
         },
         "mode": context.get("mode"),
+        "analysis_profile": context.get("analysis_profile") or "Trainer / Modding",
         "region_kind": context.get("region_kind"),
         "current_ea": context.get("current_ea"),
         "screen_ea": context.get("screen_ea"),
@@ -635,11 +690,20 @@ def build_analysis_messages(context: Dict[str, Any], engine_profile: str) -> lis
         "user_hypothesis": str(context.get("analyst_hint") or "").strip(),
     }
     dump_context = context.get("dump_context") or {}
+    analysis_profile = str(context.get("analysis_profile") or "Trainer / Modding")
     user = {
-        "task": "Analyze this IDA function, non-decompilable red/assembly region, or focused data/string artifact for game-modding reverse engineering.",
+        "task": "Analyze this IDA function, non-decompilable red/assembly region, or focused data/string artifact using the selected analysis profile.",
+        "analysis_profile": analysis_profile,
         "priority_analyst_context": analyst_context,
         "priority_dump_context": dump_context,
         "requirements": [
+            "Selected analysis_profile is '%s'. Adapt priorities and output sections to that profile." % analysis_profile,
+            "If analysis_profile is 'Trainer / Modding', keep the existing local game-modding/trainer focus: hook usefulness, values to log, modification surface, and concrete experiments.",
+            "If analysis_profile is 'Driver IOCTL', prioritize defensive Windows kernel driver IOCTL audit: dispatch path, IoControlCode selectors, buffer source, transfer method, length/probe checks, copy/map/process-memory primitives, validation gaps, and safe verification steps.",
+            "For Driver IOCTL, fill driver_ioctl_assessment, driver_ioctl_radar, driver_ioctl_candidates, and ioctl_experiments. Do not replace them with generic reverse-engineering prose.",
+            "For Driver IOCTL, do not provide exploit payloads, bypasses, persistence, stealth, or weaponized request builders. Provide defensive evidence, triage, and safe lab validation only.",
+            "For Driver IOCTL, never claim arbitrary read/write merely because an IOCTL exists; require evidence such as trusted user pointer, address/size fields, MmCopyVirtualMemory, process attach, mapped memory, memcpy/RtlCopyMemory path, METHOD_NEITHER, or missing length/probe validation.",
+            "For Driver IOCTL, distinguish confirmed facts from audit hypotheses and state exactly what evidence is missing.",
             "If pseudocode is unavailable, reason from assembly, xrefs, strings, calls, constants, and bytes.",
             "If context.mode is data or context.data_artifact.kind is present, treat the focus as a data/string artifact, not executable code.",
             "For data/string artifacts, do not invent loops, parameters, return values, accumulators, or hook behavior. Explain the literal value, address, segment, references to it, and which referencing function should be inspected next.",
@@ -710,9 +774,12 @@ def build_analysis_messages(context: Dict[str, Any], engine_profile: str) -> lis
             "Do not mention stack cookies, SEH, or compiler boilerplate unless they are directly relevant to the function's behavior.",
             "When an output buffer is initialized then modified in a loop, describe it as an output vector/array until stronger evidence names the gameplay concept.",
             "If context.performance_budget.pseudocode_skipped is true, explicitly say the analysis used bounded ASM/focus context and recommend narrowing selection for deeper analysis.",
-            "If context.has_function is true, next_questions must include exactly these two actionable questions:",
+            "If context.has_function is true and analysis_profile is Trainer / Modding, next_questions must include exactly these two actionable questions:",
             "Lets call it and see the returns",
             "Lets hook it and modify something",
+            "If context.has_function is true and analysis_profile is Driver IOCTL, next_questions must instead include these two defensive audit questions:",
+            "Map the IOCTL code, transfer method, and request/response buffer layout",
+            "Audit length/probe/access validation before any copy/map/process-memory primitive",
             "Return user_context_alignment.used=true when priority_analyst_context was present, even if the evidence contradicts it.",
             "Return multi_agent and claim_board fields when context.evidence_pack is present.",
             "Return JSON matching the provided schema.",
@@ -770,6 +837,8 @@ def build_xref_explorer_messages(
             "You are not the final analyst. Do not rewrite or decide the final function analysis.",
             "Focus only on callers, callees, data refs, strings, xref_expansion, and how they connect facts together.",
             "Your purpose is to add context for game-modding/trainer decisions: whether this function is a direct hook target, helper, parser, telemetry source, caller to trace, or callee to inspect.",
+            "If context.analysis_profile is Driver IOCTL, your purpose changes to defensive driver context: connect dispatch functions, IOCTL selector handling, buffer helpers, validation helpers, copy/map/process-memory callees, device strings, and caller/callee paths.",
+            "For Driver IOCTL, do not produce exploit payloads or request builders; add evidence-backed claims about what should be audited next.",
             "If the focus is a data/string artifact, map which functions reference it and what those references might mean; do not describe it as executable behavior.",
             "Add evidence-backed claims that connect multiple facts, for example string anchors plus caller/callee names, output writes plus consumers, or data refs plus surrounding functions.",
             "If XREF expansion is sparse or disabled, say so and recommend the next xref direction.",

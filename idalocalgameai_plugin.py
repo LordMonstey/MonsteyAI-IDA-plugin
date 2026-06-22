@@ -20,6 +20,7 @@ except Exception:
 
 ACTION_NAME = "idalocalgameai:show"
 ACTION_ANALYZE_SELECTION = "idalocalgameai:analyze_selection"
+ACTION_ANALYZE_RENAME = "idalocalgameai:analyze_rename"
 ACTION_RECONSTRUCT_PSEUDO = "idalocalgameai:reconstruct_pseudocode"
 _popup_hooks = None
 
@@ -55,12 +56,30 @@ class ShowPanelAction(ida_kernwin.action_handler_t):
 class AnalyzeSelectionAction(ida_kernwin.action_handler_t):
     def activate(self, ctx):
         try:
-            from idalocalgameai.ui.panel import analyze_focus
+            from idalocalgameai.ui.panel import analyze_focus_headless
 
-            analyze_focus(force_asm=True)
+            analyze_focus_headless(force_asm=True, force_rename=False)
         except Exception as exc:
             ida_kernwin.warning("MonsteyAI-Analyse failed:\n%s" % exc)
             ida_kernwin.msg("[%s] MonsteyAI-Analyse error: %s\n" % (PLUGIN_NAME, exc))
+        return 1
+
+    def update(self, ctx):
+        widget_type = getattr(ctx, "widget_type", None)
+        if _supported_popup_widget(widget_type):
+            return ida_kernwin.AST_ENABLE_FOR_WIDGET
+        return ida_kernwin.AST_DISABLE_FOR_WIDGET
+
+
+class AnalyzeRenameAction(ida_kernwin.action_handler_t):
+    def activate(self, ctx):
+        try:
+            from idalocalgameai.ui.panel import analyze_focus_headless
+
+            analyze_focus_headless(force_asm=True, force_rename=True)
+        except Exception as exc:
+            ida_kernwin.warning("MonsteyAI-Analyze + Rename failed:\n%s" % exc)
+            ida_kernwin.msg("[%s] MonsteyAI-Analyze + Rename error: %s\n" % (PLUGIN_NAME, exc))
         return 1
 
     def update(self, ctx):
@@ -96,6 +115,7 @@ class MonsteyPopupHooks(ida_kernwin.UI_Hooks):
         try:
             if _supported_popup_widget(getattr(ctx, "widget_type", None)):
                 ida_kernwin.attach_action_to_popup(widget, popup_handle, ACTION_ANALYZE_SELECTION, None)
+                ida_kernwin.attach_action_to_popup(widget, popup_handle, ACTION_ANALYZE_RENAME, None)
                 ida_kernwin.attach_action_to_popup(widget, popup_handle, ACTION_RECONSTRUCT_PSEUDO, None)
         except Exception:
             pass
@@ -139,6 +159,15 @@ class IDALocalGameAIPlugin(ida_idaapi.plugin_t):
             -1,
         )
         ida_kernwin.register_action(analyze_desc)
+        rename_desc = ida_kernwin.action_desc_t(
+            ACTION_ANALYZE_RENAME,
+            "MonsteyAI-Analyze + Rename",
+            AnalyzeRenameAction(),
+            "",
+            "Analyze current focus and apply the suggested name when valid",
+            -1,
+        )
+        ida_kernwin.register_action(rename_desc)
         rebuild_desc = ida_kernwin.action_desc_t(
             ACTION_RECONSTRUCT_PSEUDO,
             "MonsteyAI-Rebuild Pseudocode",
@@ -175,6 +204,10 @@ class IDALocalGameAIPlugin(ida_idaapi.plugin_t):
             pass
         try:
             ida_kernwin.unregister_action(ACTION_ANALYZE_SELECTION)
+        except Exception:
+            pass
+        try:
+            ida_kernwin.unregister_action(ACTION_ANALYZE_RENAME)
         except Exception:
             pass
         try:

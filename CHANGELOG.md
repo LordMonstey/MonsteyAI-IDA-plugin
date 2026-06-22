@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.22 - Driver IOCTL profile and headless IDA actions
+
+### Highlights
+
+- Added `Settings > Analysis profile` with `Trainer / Modding` and `Driver IOCTL`.
+- `Driver IOCTL` mode adds defensive driver audit cues for IOCTL selectors, IRP/request buffers, transfer method hints, validation gates, device strings, and memory copy/map/process primitives.
+- Added a dedicated `Driver IOCTL Risk Radar` with risk score, buffer sources, validation gaps, R/W primitive indicators, safe verification steps, and copyable popup view.
+- Right-click `MonsteyAI-Analyse` now works without opening the main UI; it runs through a hidden controller and shows the Simple Summary popup when done.
+- Added right-click `MonsteyAI-Analyze + Rename` to analyze the focus and apply a valid suggested name from the result.
+- AI comments/colors now also try to write Hex-Rays pseudocode user comments, so analysis notes can appear in pseudocode views, not only the disassembly listing.
+
 ## v0.3.21 - Clean upgrade / replacement script
 
 ### Highlights

@@ -44,6 +44,15 @@ During analysis, a dedicated `Debug Trace` popup shows the live processing trace
 
 Use `Quick Local Pass` when you want an immediate no-LLM pass. It still collects focused IDA context and semantic cues, then fills the summary/trainer assessment locally. This is useful for quick hook usefulness checks or when the hosted/local model is slow.
 
+## Analysis Profile
+
+`Settings > Analysis profile` changes what Monstey optimizes for:
+
+- `Trainer / Modding`: game dump analysis, hook usefulness, values to log, modification surfaces, structure hypotheses, and trainer experiments.
+- `Driver IOCTL`: defensive Windows driver auditing. Monstey looks for IOCTL dispatch, `IoControlCode` checks, IRP/request buffers, transfer method hints, validation gaps, device strings, and memory copy/map/process primitives.
+
+In `Driver IOCTL` mode, the report shows a dedicated `Driver IOCTL Risk Radar`. It is evidence-first: it should say what is proven, what is only a lead, and what must be verified before calling something a vulnerability.
+
 ## AI Focus Lock
 
 The `AI focus` row shows which address Preview/Analyze will use.
@@ -228,6 +237,10 @@ You can analyze directly from IDA:
 
 If a selection exists, the selected instructions are preferred. Otherwise the plugin uses the current focus.
 
+`MonsteyAI-Analyse` can run without opening the main panel. It uses a hidden controller and shows the `Simple Summary` popup when the result is ready.
+
+Use `MonsteyAI-Analyze + Rename` when you want the same headless analysis plus a valid suggested name applied to the focused function. It only renames default IDA names such as `sub_...`, so existing analyst names are preserved.
+
 ## Clickable Evidence
 
 Evidence rows are color-coded by kind: strings, assembly, xrefs, calls, imports, constants, and notes.
@@ -260,6 +273,8 @@ The popup also scans raw local clues such as Hex-Rays lines, strings, XREF strin
 
 Existing non-AI comments are preserved. Existing `AI:` lines are refreshed so repeated analysis does not endlessly duplicate old AI text.
 
+When Hex-Rays is available, Monstey also tries to write the same bounded comments as pseudocode user comments so they can appear directly in the pseudocode view after refresh.
+
 Enable `Settings > Auto comments/colors` to apply the same comments and colors automatically after each analysis.
 
 The header shows an `Auto:` badge so you can see whether automatic rename and comments are active without opening settings.
@@ -285,7 +300,7 @@ Use this as a quick sanity check. The label uses a shortened process identity, n
 
 ## Call and Hook Action Lab
 
-When the current analysis is for a function, `Next questions` always includes:
+When the current analysis is for a function in `Trainer / Modding` profile, `Next questions` includes:
 
 ```text
 Lets call it and see the returns
@@ -293,6 +308,8 @@ Lets hook it and modify something
 ```
 
 The Function tab also exposes matching buttons. Press one to open `Action Lab`, then tell the AI what you want to observe or modify. You can continue the chat after the first answer, and the plugin keeps the current analysis/context attached.
+
+In `Driver IOCTL` profile, `Next questions` instead prioritizes mapping the IOCTL code/buffer layout and auditing length/probe/access validation before any copy/map/process-memory primitive.
 
 While generating, Action Lab prints debug progress in the chat so you can see prompt construction, provider/model, request send, response time, or failure.
 

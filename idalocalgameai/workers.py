@@ -11,6 +11,7 @@ from .compat.qt import QtCore, signal
 from .analysis_policy import agent_policy, model_policy, subagent_budget, toolchain_policy
 from .config import PluginConfig
 from .enrichment import enrich_analysis_with_local_cues
+from .driver_intel import build_driver_ioctl_intel
 from .evidence_pack import apply_agent_claim_updates, build_claim_board, build_evidence_pack
 from .external_evidence import apply_external_evidence_to_analysis, merge_external_evidence_text
 from .llm import OpenAICompatClient
@@ -31,17 +32,22 @@ REQUIRED_FUNCTION_QUESTIONS = [
     "Lets call it and see the returns",
     "Lets hook it and modify something",
 ]
+DRIVER_REQUIRED_FUNCTION_QUESTIONS = [
+    "Map the IOCTL code, transfer method, and request/response buffer layout",
+    "Audit length/probe/access validation before any copy/map/process-memory primitive",
+]
 
 
 def ensure_function_questions(analysis: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     if not context.get("has_function"):
         return analysis
+    required = DRIVER_REQUIRED_FUNCTION_QUESTIONS if "driver" in str(context.get("analysis_profile") or "").lower() or "ioctl" in str(context.get("analysis_profile") or "").lower() else REQUIRED_FUNCTION_QUESTIONS
     current = analysis.get("next_questions")
     if not isinstance(current, list):
         current = []
     normalized = [str(item) for item in current]
     out = []
-    for question in REQUIRED_FUNCTION_QUESTIONS:
+    for question in required:
         out.append(question)
     for question in normalized:
         if question not in out:
@@ -290,6 +296,8 @@ class LLMWorker(QtCore.QThread):
         analysis = apply_external_evidence_to_analysis(analysis, self.context)
         self._progress("building trainer radar, candidates, structure hypotheses and experiments")
         analysis = build_trainer_intel(analysis, self.context)
+        self._progress("building driver IOCTL audit radar when profile/cues require it")
+        analysis = build_driver_ioctl_intel(analysis, self.context)
         analysis = ensure_function_questions(analysis, self.context)
         if evidence_pack:
             analysis["evidence_pack"] = evidence_pack
@@ -636,6 +644,7 @@ class LLMWorker(QtCore.QThread):
                 "worker_total_seconds": round(time.perf_counter() - t0, 3),
                 "max_analysis_tokens": max_tokens,
                 "analysis_depth": getattr(self.cfg, "analysis_depth", ""),
+                "analysis_profile": getattr(self.cfg, "analysis_profile", "Trainer / Modding"),
                 "effective_provider": getattr(active_cfg, "provider", getattr(self.cfg, "provider", "")),
                 "effective_model": model,
                 "agent_mode": agent_mode,

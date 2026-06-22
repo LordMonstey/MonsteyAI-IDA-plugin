@@ -20,7 +20,8 @@ from ..analysis_policy import agent_policy, model_policy, watchdog_seconds
 from ..apply import apply_colored_annotations, apply_function_name, mark_review_item, refresh_ida
 from ..asm_pseudocode import attach_reconstruction_to_context, reconstruct_pseudocode_from_context, render_asm_source
 from ..compat.qt import QT_BINDING, QtCore, QtGui, QtWidgets
-from ..config import GEMINI_MODEL_PRESETS, MODEL_PRESETS, PluginConfig, config_dir, config_path, load_config, save_config
+from ..config import ANALYSIS_PROFILES, GEMINI_MODEL_PRESETS, MODEL_PRESETS, PluginConfig, config_dir, config_path, load_config, save_config
+from ..driver_intel import build_driver_ioctl_intel
 from ..dump_context import dump_context_path, dump_context_payload, load_dump_context, save_dump_context
 from ..external_evidence import (
     apply_external_evidence_to_analysis,
@@ -158,6 +159,8 @@ KIND_COLORS = {
     "external_xref": ("#362f45", "#d2b6ff"),
     "external_string": ("#3f3524", "#ffd58a"),
     "external_note": ("#303234", "#d7dde5"),
+    "ioctl": ("#402a36", "#f0a7c6"),
+    "driver_candidate": ("#352b40", "#d2b6ff"),
     "note": ("#303234", "#d7dde5"),
 }
 
@@ -447,8 +450,9 @@ class MonsteyIDBHooks(IDB_HOOKS_BASE):
 
 
 class MainWidget(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, headless: bool = False):
         super().__init__(parent)
+        self.headless = bool(headless)
         install_navigation_hooks()
         self.cfg: PluginConfig = load_config()
         self.visible_provider = self.cfg.provider
@@ -493,6 +497,8 @@ class MainWidget(QtWidgets.QWidget):
         self.pseudodiff_worker = None
         self.toolchain_worker = None
         self.current_action_kind: Optional[str] = None
+        self.force_apply_name_once = False
+        self.force_summary_popup_once = False
         self.action_history = ""
         self.last_action_code = ""
         self.pipeline_labels = {}
@@ -509,7 +515,8 @@ class MainWidget(QtWidgets.QWidget):
         self.made_overlay = MonsteyMadeOverlay(self)
         self.made_overlay.hide()
         self.toast = StatusToast(self)
-        QtCore.QTimer.singleShot(260, self._show_made_overlay)
+        if not self.headless:
+            QtCore.QTimer.singleShot(260, self._show_made_overlay)
 
     def _build_ui(self) -> None:
         self.setObjectName("IDALocalGameAIWidget")
@@ -1305,6 +1312,9 @@ class MainWidget(QtWidgets.QWidget):
         self.analysis_timeout_spin.setRange(15, 300)
         self.analysis_timeout_spin.setSuffix(" sec")
         self.analysis_timeout_spin.setToolTip("Timeout for real analyses. If reached, the plugin falls back to local semantic cues instead of staying stuck.")
+        self.analysis_profile_combo = QtWidgets.QComboBox()
+        self.analysis_profile_combo.addItems(list(ANALYSIS_PROFILES))
+        self.analysis_profile_combo.setToolTip("Switch Monstey's priorities: game trainer/modding triage or defensive Windows driver IOCTL audit.")
         self.analysis_depth_combo = QtWidgets.QComboBox()
         self.analysis_depth_combo.addItems(["Fast", "Balanced", "Deep"])
         self.analysis_depth_combo.setToolTip(
@@ -1377,6 +1387,7 @@ class MainWidget(QtWidgets.QWidget):
         layout.addRow("LLM detail", self.llm_detail_label)
 
         layout.addRow("", self._subsection_label("Context Budget"))
+        layout.addRow("Analysis profile", self.analysis_profile_combo)
         layout.addRow("Analysis speed", self.analysis_depth_combo)
         layout.addRow("Agent mode", self.agent_mode_combo)
         layout.addRow("Max answer tokens", self.max_analysis_tokens_spin)
@@ -1470,6 +1481,8 @@ class MainWidget(QtWidgets.QWidget):
         self.temp_spin.setValue(float(self.cfg.temperature))
         self.timeout_spin.setValue(int(self.cfg.timeout_seconds))
         self.analysis_timeout_spin.setValue(int(self.cfg.analysis_timeout_seconds))
+        idx_profile = self.analysis_profile_combo.findText(getattr(self.cfg, "analysis_profile", "Trainer / Modding"))
+        self.analysis_profile_combo.setCurrentIndex(idx_profile if idx_profile >= 0 else 0)
         idx_depth = self.analysis_depth_combo.findText(self.cfg.analysis_depth)
         self.analysis_depth_combo.setCurrentIndex(idx_depth if idx_depth >= 0 else 0)
         idx_agent = self.agent_mode_combo.findText(getattr(self.cfg, "agent_mode", "Single"))
@@ -1527,6 +1540,7 @@ class MainWidget(QtWidgets.QWidget):
             "temperature": float(self.temp_spin.value()),
             "timeout_seconds": int(self.timeout_spin.value()),
             "analysis_timeout_seconds": int(self.analysis_timeout_spin.value()),
+            "analysis_profile": self.analysis_profile_combo.currentText(),
             "engine_profile": self.engine_combo.currentText(),
             "analysis_depth": self.analysis_depth_combo.currentText(),
             "agent_mode": self.agent_mode_combo.currentText(),
@@ -1565,7 +1579,7 @@ class MainWidget(QtWidgets.QWidget):
         provider = "Gemini" if getattr(self.cfg, "provider", "local") == "gemini" else "Local"
         text = "LLM: %s | Agents: %s | Auto: %s" % (
             provider,
-            getattr(self.cfg, "agent_mode", "Single"),
+            "%s/%s" % (getattr(self.cfg, "agent_mode", "Single"), getattr(self.cfg, "analysis_profile", "Trainer / Modding")),
             ", ".join(bits) if bits else "off",
         )
         color = "#9af2b2" if bits else "#ffb3a7"
@@ -2335,7 +2349,7 @@ class MainWidget(QtWidgets.QWidget):
             )))
             self.btn_call_returns.setEnabled(can_experiment)
             self.btn_hook_modify.setEnabled(can_experiment)
-            self.btn_trainer_radar.setEnabled(bool(self.current_analysis and self.current_analysis.get("trainer_radar")))
+            self._refresh_decision_radar_button()
             self.btn_send_action.setEnabled(bool(can_experiment and self.current_action_kind))
 
     def _ensure_debug_trace(self) -> DebugTraceDialog:
@@ -2360,12 +2374,56 @@ class MainWidget(QtWidgets.QWidget):
             self.trainer_radar_dialog.setStyleSheet(PANEL_STYLE)
         return self.trainer_radar_dialog
 
+    def _current_is_driver_profile(self) -> bool:
+        profile = ""
+        if self.current_context:
+            profile = str(self.current_context.get("analysis_profile") or "")
+        if not profile:
+            profile = str(getattr(self.cfg, "analysis_profile", "Trainer / Modding"))
+        return "driver" in profile.lower() or "ioctl" in profile.lower()
+
+    def _decision_radar_available(self) -> bool:
+        if not self.current_analysis:
+            return False
+        if self._current_is_driver_profile():
+            return bool(self.current_analysis.get("driver_ioctl_radar"))
+        return bool(self.current_analysis.get("trainer_radar"))
+
+    def _refresh_decision_radar_button(self) -> None:
+        is_driver = self._current_is_driver_profile()
+        self.btn_trainer_radar.setText("IOCTL Radar" if is_driver else "Trainer Radar")
+        self.btn_trainer_radar.setToolTip(
+            "Open the dedicated defensive driver IOCTL audit radar window."
+            if is_driver
+            else "Open the dedicated trainer/modding decision radar window."
+        )
+        self.btn_trainer_radar.setEnabled(self._decision_radar_available())
+
+    def _decision_radar_popup_html(self, analysis: Dict[str, Any]) -> str:
+        if self._current_is_driver_profile():
+            return (
+                "<html><body style='font-family:Segoe UI, Arial; color:#edf1f5; background:#1b1d20;'>"
+                "<div style='margin-bottom:8px; padding:7px 9px; background:#242a30; "
+                "border-left:3px solid #f0a7c6; font-weight:700; color:#f0a7c6;'>Driver IOCTL Audit Workspace</div>"
+                "%s%s%s"
+                "</body></html>"
+                % (
+                    self._driver_ioctl_radar_html(analysis),
+                    self._driver_ioctl_assessment_html(analysis),
+                    self._ioctl_experiments_html(analysis),
+                )
+            )
+        return self._trainer_radar_popup_html(analysis)
+
     def _show_trainer_radar(self) -> None:
         if not self.current_analysis:
             self._set_status("Analyze a function first", ok=False)
             return
         dialog = self._ensure_trainer_radar()
-        dialog.set_radar_html(self._trainer_radar_popup_html(self.current_analysis))
+        is_driver = self._current_is_driver_profile()
+        dialog.setWindowTitle("%s - %s" % (PLUGIN_NAME, "IOCTL Radar" if is_driver else "Trainer Radar"))
+        dialog.copy_button.setText("Copy IOCTL Radar" if is_driver else "Copy Trainer Radar")
+        dialog.set_radar_html(self._decision_radar_popup_html(self.current_analysis))
         dialog.show()
         try:
             dialog.raise_()
@@ -2935,6 +2993,7 @@ class MainWidget(QtWidgets.QWidget):
         analysis = enrich_analysis_with_local_cues(analysis, ctx)
         analysis = apply_external_evidence_to_analysis(analysis, ctx)
         analysis = build_trainer_intel(analysis, ctx)
+        analysis = build_driver_ioctl_intel(analysis, ctx)
         analysis = ensure_function_questions(analysis, ctx)
         analysis["runtime_timing"] = {
             "llm_seconds": 0.0,
@@ -2942,6 +3001,7 @@ class MainWidget(QtWidgets.QWidget):
             "worker_total_seconds": 0.0,
             "max_analysis_tokens": 0,
             "analysis_depth": getattr(self.cfg, "analysis_depth", ""),
+            "analysis_profile": getattr(self.cfg, "analysis_profile", "Trainer / Modding"),
             "local_only": bool(local_only),
         }
         return analysis
@@ -3033,6 +3093,7 @@ class MainWidget(QtWidgets.QWidget):
                 return
 
         ctx = self.current_context
+        ctx["analysis_profile"] = getattr(self.cfg, "analysis_profile", "Trainer / Modding")
         timings = (ctx.get("performance_budget") or {}).get("timings_seconds") or {}
         focus = ctx.get("focus") or {}
         self._append_analysis_log(
@@ -3228,13 +3289,14 @@ class MainWidget(QtWidgets.QWidget):
         if timings:
             timing_text = " | context %.2fs" % float(timings.get("total_context") or 0.0)
         self.context_label.setText(
-            "%s | %s - %s | %s | %s | %s | focus=%s %s%s"
+            "%s | %s - %s | %s | %s | profile=%s | %s | focus=%s %s%s"
             % (
                 ctx.get("function_name"),
                 ctx.get("start_ea"),
                 ctx.get("end_ea"),
                 ctx.get("mode"),
                 ctx.get("region_kind"),
+                ctx.get("analysis_profile") or getattr(self.cfg, "analysis_profile", "Trainer / Modding"),
                 budget.get("analysis_depth") or "-",
                 focus.get("source"),
                 focus.get("item_head") or focus.get("ea"),
@@ -3285,7 +3347,9 @@ class MainWidget(QtWidgets.QWidget):
         self.raw_edit.setPlainText(json.dumps(analysis, indent=2, sort_keys=True))
         valid_name = validate_function_name(analysis.get("suggested_function_name"))
         status_bits = []
-        if valid_name and self.current_context and self.current_context.get("has_function") and bool(self.cfg.auto_rename_after_analysis):
+        force_name = bool(getattr(self, "force_apply_name_once", False))
+        self.force_apply_name_once = False
+        if valid_name and self.current_context and self.current_context.get("has_function") and (bool(self.cfg.auto_rename_after_analysis) or force_name):
             try:
                 start = int(str(self.current_context["start_ea"]), 16)
                 result = apply_function_name(start, analysis, only_if_default=True)
@@ -3334,11 +3398,13 @@ class MainWidget(QtWidgets.QWidget):
                 )
         self.btn_apply_name.setEnabled(bool(valid_name))
         self.btn_apply_comments.setEnabled(bool(analysis.get("comments") or analysis.get("evidence") or analysis.get("summary")))
-        self.btn_trainer_radar.setEnabled(bool(analysis.get("trainer_radar")))
+        self._refresh_decision_radar_button()
         can_experiment = bool(self.current_context and self.current_context.get("has_function"))
         self.btn_call_returns.setEnabled(can_experiment)
         self.btn_hook_modify.setEnabled(can_experiment)
-        if bool(getattr(self.cfg, "show_verbal_summary_popup", True)):
+        force_summary = bool(getattr(self, "force_summary_popup_once", False))
+        self.force_summary_popup_once = False
+        if bool(getattr(self.cfg, "show_verbal_summary_popup", True)) or force_summary:
             self._show_verbal_summary_popup(analysis)
 
     def _on_analysis_failed(self, message: str) -> None:
@@ -3354,25 +3420,35 @@ class MainWidget(QtWidgets.QWidget):
         confidence = float(analysis.get("confidence") or 0.0)
         confidence_color = "#9af2b2" if confidence >= 0.72 else "#ffd58a" if confidence >= 0.45 else "#ff9f9f"
         process = "-"
+        profile = "Trainer / Modding"
         if self.current_context:
+            profile = str(self.current_context.get("analysis_profile") or getattr(self.cfg, "analysis_profile", "Trainer / Modding"))
             game_ctx = self.current_context.get("game_context") or {}
             process = str(game_ctx.get("process_display") or game_ctx.get("process_name") or game_ctx.get("selected_candidate") or "-")
+        is_driver = "driver" in profile.lower() or "ioctl" in profile.lower()
+        has_driver_radar = bool(analysis.get("driver_ioctl_radar"))
+        profile_color = "#f0a7c6" if is_driver else "#9af2b2"
         parts = [
             "<html><body style='font-family:Segoe UI, Arial; color:#edf1f5; background:#1b1d20;'>",
             "<div style='margin-bottom:8px;'>",
             self._chip("Mode", analysis.get("mode") or "-", "#9bd7ff"),
+            self._chip("Profile", profile, profile_color),
             self._chip("Confidence", "%.2f" % confidence, confidence_color),
             self._chip("Process", process, "#ffd58a"),
             self._chip("Name", analysis.get("suggested_function_name") or "-", "#d2b6ff"),
             "</div>",
             self._multi_agent_html(analysis),
             self._section_html("Summary", [str(analysis.get("summary") or "-")], "#9bd7ff", paragraph=True),
-            self._trainer_radar_html(analysis),
+            self._driver_ioctl_radar_html(analysis) if is_driver or has_driver_radar else "",
+            self._driver_ioctl_assessment_html(analysis) if is_driver or has_driver_radar else "",
+            self._ioctl_experiments_html(analysis) if is_driver or has_driver_radar else "",
+            "" if is_driver else self._trainer_radar_html(analysis),
             self._user_context_html(analysis),
             self._algorithm_html(analysis),
-            self._trainer_assessment_html(analysis),
-            self._hook_experiments_html(analysis),
-            self._trainer_candidates_html(analysis),
+            "" if is_driver else self._trainer_assessment_html(analysis),
+            "" if is_driver else self._hook_experiments_html(analysis),
+            "" if is_driver else self._trainer_candidates_html(analysis),
+            self._driver_ioctl_candidates_html(analysis) if is_driver or has_driver_radar else "",
             self._xref_graph_html(analysis),
             self._structure_hypotheses_html(analysis),
             self._bitstream_html(analysis),
@@ -3515,6 +3591,19 @@ class MainWidget(QtWidgets.QWidget):
         ]).lower()
         evidence_text = self._verbal_evidence_text(analysis)
         full_text = "%s %s %s" % (category, summary_text, evidence_text)
+        if "driver" in str(context.get("analysis_profile") or "").lower() or any(
+            token in full_text
+            for token in (
+                "ioctl",
+                "iocontrolcode",
+                "deviceiocontrol",
+                "systembuffer",
+                "type3inputbuffer",
+                "mmcopyvirtualmemory",
+                "irp_mj_device_control",
+            )
+        ):
+            return "driver_ioctl"
         if context.get("mode") == "data" or context.get("data_artifact"):
             return "data"
         if any(token in full_text for token in ("drawindexed", "drawindexedinstanced", "drawindexed(", "draw indexed", "drawcall", "draw call")):
@@ -3590,6 +3679,11 @@ class MainWidget(QtWidgets.QWidget):
                 "In plain terms, it updates a drawing setting if needed, then asks the graphics system to draw part of the scene.",
                 "Check who asks for this draw and in which scene state it happens; this is more about rendering than player stats.",
             ),
+            "driver_ioctl": (
+                "This function appears to be part of a Windows driver request path.",
+                "In plain terms, it may receive a request code and then read or write data through buffers supplied by another program.",
+                "Map the request code, buffer source, length checks, and any memory-copy path before calling it vulnerable.",
+            ),
             "ui": (
                 "This function appears to support display, UI, camera, or presentation behavior.",
                 "It can explain what the player sees, but it may only be a visual layer.",
@@ -3646,6 +3740,11 @@ class MainWidget(QtWidgets.QWidget):
                 "Cette fonction semble preparer une demande de dessin graphique.",
                 "En clair, elle met a jour un reglage de dessin si besoin, puis demande au systeme graphique de dessiner une partie de la scene.",
                 "Regarde qui demande ce dessin et dans quel etat de scene cela arrive; c'est plutot du rendu que des stats joueur.",
+            ),
+            "driver_ioctl": (
+                "Cette fonction semble appartenir au chemin de requete d'un driver Windows.",
+                "En clair, elle peut recevoir un code de requete puis lire ou ecrire des donnees via des buffers fournis par un autre programme.",
+                "Mappe le code IOCTL, la source du buffer, les controles de taille et les copies memoire avant de conclure a une vulnerabilite.",
             ),
             "ui": (
                 "Cette fonction semble servir l'affichage, l'interface, la camera ou la presentation.",
@@ -4110,6 +4209,239 @@ class MainWidget(QtWidgets.QWidget):
             )
         table = "<table width='100%%' cellspacing='0' cellpadding='0' style='margin-top:4px;'>%s</table>" % "".join(panel_rows)
         return title + header + table
+
+    def _risk_color(self, risk: Any, score: Any = None) -> str:
+        text = str(risk or "").strip().lower()
+        if text in ("critical", "high"):
+            return "#ff6b7a"
+        if text == "medium":
+            return "#ffd58a"
+        if text == "low":
+            return "#ffcf6e"
+        if text in ("", "-", "none", "unknown") and score is None:
+            return "#98f0df"
+        try:
+            return self._score_color(score)
+        except Exception:
+            return "#98f0df"
+
+    def _driver_values(self, data: Dict[str, Any], key: str, limit: int = 5) -> list:
+        values = data.get(key) or []
+        if not isinstance(values, list):
+            values = [values]
+        out = []
+        for value in values[:limit]:
+            text = str(value or "").strip()
+            if text:
+                out.append(text)
+        return out
+
+    def _mini_driver_panel(self, title: str, items: list, color: str, empty: str = "") -> str:
+        if not items and not empty:
+            return ""
+        if not items:
+            body = "<div style='color:#7f8994;'>%s</div>" % html.escape(empty)
+        else:
+            body = "".join(
+                "<div style='margin:5px 0; padding-left:8px; border-left:2px solid %s; line-height:1.35;'>%s</div>"
+                % (color, html.escape(str(item)))
+                for item in items[:5]
+            )
+        return (
+            "<td valign='top' width='50%%' style='padding:5px;'>"
+            "<div style='background:#20252a; border:1px solid #333b44; border-radius:4px; padding:8px;'>"
+            "<div style='color:%s; font-weight:700; margin-bottom:5px;'>%s</div>%s</div></td>"
+            % (color, html.escape(title), body)
+        )
+
+    def _driver_ioctl_radar_html(self, analysis: Dict[str, Any]) -> str:
+        radar = analysis.get("driver_ioctl_radar") or {}
+        if not isinstance(radar, dict) or not radar:
+            return ""
+        score = max(0, min(100, int(radar.get("score") or 0)))
+        risk = str(radar.get("risk") or radar.get("category") or "unknown")
+        accent = self._risk_color(risk, score)
+        tags = radar.get("tags") or []
+        if not isinstance(tags, list):
+            tags = [tags]
+        tag_html = "".join(self._chip("Tag", item, "#f0a7c6") for item in tags[:6])
+        bar = (
+            "<div style='height:8px; background:#11161a; border:1px solid #303840; margin:7px 0;'>"
+            "<div style='height:8px; width:%d%%; background:%s;'></div></div>"
+            % (score, accent)
+        )
+        title = (
+            "<div style='margin-top:8px; padding:6px 8px; background:#242a30; "
+            "border-left:3px solid %s; font-weight:700; color:%s;'>Driver IOCTL Risk Radar</div>"
+            % (accent, accent)
+        )
+        header = (
+            "<div style='padding:8px; background:#1d2227; border:1px solid #333b44;'>"
+            "%s%s%s%s%s%s%s"
+            "<div style='line-height:1.35; margin-top:5px;'>%s</div>"
+            "<div style='line-height:1.35; margin-top:5px; color:#cfd7df;'><span style='color:%s; font-weight:700;'>Next: </span>%s</div>"
+            "</div>"
+            % (
+                self._chip("Score", score, accent),
+                self._chip("Risk", risk, accent),
+                self._chip("Verdict", radar.get("verdict") or "-", accent),
+                self._chip("Strategy", radar.get("strategy_label") or radar.get("strategy") or "-", "#9bd7ff"),
+                self._chip("Surface", radar.get("ioctl_surface") or "-", "#98f0df"),
+                self._chip("Method", radar.get("transfer_method") or "-", "#ffd58a"),
+                tag_html,
+                html.escape(str(radar.get("category") or "")),
+                accent,
+                html.escape(str(radar.get("next_move") or "-")),
+            )
+        )
+        table = (
+            "<table width='100%%' cellspacing='0' cellpadding='0' style='margin-top:4px;'>"
+            "<tr>%s%s</tr><tr>%s%s</tr></table>"
+            % (
+                self._mini_driver_panel("Why it matters", self._driver_values(radar, "why_it_matters"), "#ff9f9f", "No concrete impact proven yet."),
+                self._mini_driver_panel("Evidence", self._driver_values(radar, "evidence"), "#ffd58a", "No IOCTL evidence in current focus."),
+                self._mini_driver_panel("Verify first", self._driver_values(radar, "verify_first"), "#98f0df", "Map selector, buffers, lengths and primitive reachability first."),
+                self._mini_driver_panel("Safe tests", self._driver_values(radar, "safe_tests"), "#9bd7ff", "Use static mapping first; dynamic checks only in a lab VM."),
+            )
+        )
+        return title + header + bar + table
+
+    def _driver_ioctl_assessment_html(self, analysis: Dict[str, Any]) -> str:
+        data = analysis.get("driver_ioctl_assessment") or {}
+        if not isinstance(data, dict) or not data:
+            return ""
+        risk = str(data.get("risk") or "unknown")
+        accent = self._risk_color(risk)
+        reason = str(data.get("risk_reason") or "").strip()
+        panels = [
+            self._mini_driver_panel("Buffer sources", self._driver_values(data, "buffer_sources"), "#98f0df", "No buffer source mapped yet."),
+            self._mini_driver_panel("Validation gaps", self._driver_values(data, "validation_gaps"), "#ff9f9f", "No obvious gap proven in focused context."),
+            self._mini_driver_panel("R/W primitive indicators", self._driver_values(data, "rw_primitive_indicators"), "#ffd58a", "No memory primitive proven in this slice."),
+            self._mini_driver_panel("Not enough evidence", self._driver_values(data, "not_enough_evidence"), "#d2b6ff", ""),
+            self._mini_driver_panel("Stability notes", self._driver_values(data, "stability_notes"), "#f0a7c6", ""),
+        ]
+        rows = []
+        current = []
+        for panel in [item for item in panels if item]:
+            current.append(panel)
+            if len(current) == 2:
+                rows.append("<tr>%s</tr>" % "".join(current))
+                current = []
+        if current:
+            current.append("<td width='50%'></td>")
+            rows.append("<tr>%s</tr>" % "".join(current))
+        header = (
+            "<div style='margin-top:8px; padding:5px 7px; background:#242a30; border-left:3px solid %s; "
+            "font-weight:700; color:%s;'>Driver IOCTL Assessment</div>"
+            "<div style='padding:8px; background:#1d2227; border:1px solid #333b44;'>%s%s%s%s</div>"
+            % (
+                accent,
+                accent,
+                self._chip("Risk", risk, accent),
+                self._chip("Category", data.get("category") or "-", "#d2b6ff"),
+                self._chip("Surface", data.get("ioctl_surface") or "-", "#98f0df"),
+                self._chip("Method", data.get("transfer_method") or "-", "#ffd58a"),
+            )
+        )
+        if reason:
+            header += (
+                "<div style='padding:8px; background:#181c20; border-left:3px solid %s; line-height:1.35;'>"
+                "<span style='color:%s; font-weight:700;'>Why: </span>%s</div>"
+                % (accent, accent, html.escape(reason))
+            )
+        return header + "<table width='100%%' cellspacing='0' cellpadding='0'>%s</table>" % "".join(rows)
+
+    def _driver_ioctl_candidates_html(self, analysis: Dict[str, Any]) -> str:
+        rows = analysis.get("driver_ioctl_candidates") or []
+        if not isinstance(rows, list) or not rows:
+            return ""
+        cards = []
+        for item in rows[:6]:
+            if not isinstance(item, dict):
+                continue
+            score = int(item.get("score") or 0)
+            color = self._risk_color(item.get("risk"), score)
+            evidence = item.get("evidence") or []
+            if not isinstance(evidence, list):
+                evidence = [evidence]
+            evidence_html = "".join(
+                "<div style='margin:3px 0; padding-left:7px; border-left:2px solid %s;'>%s</div>"
+                % (color, html.escape(str(ev)))
+                for ev in evidence[:3]
+            )
+            cards.append(
+                "<td valign='top' width='50%%' style='padding:5px;'>"
+                "<div style='background:#20252a; border:1px solid #333b44; border-radius:4px; padding:8px;'>"
+                "<div>%s%s%s</div>"
+                "<div style='font-weight:700; color:#edf1f5; margin-top:4px;'>%s</div>"
+                "<div style='color:#7f8994;'>%s</div>"
+                "<div style='margin-top:5px; color:#cfd7df;'>%s</div>%s</div></td>"
+                % (
+                    self._chip("Score", score, color),
+                    self._chip("Relation", item.get("relation") or "-", "#9bd7ff"),
+                    self._chip("Role", item.get("role") or "-", "#f0a7c6"),
+                    self._jump_link(item.get("address") or item.get("function"), item.get("function") or "unknown", "#edf1f5"),
+                    self._jump_link(item.get("address") or item.get("function"), item.get("address") or "", "#9aa7b2"),
+                    html.escape(str(item.get("next_action") or "")),
+                    evidence_html,
+                )
+            )
+        if not cards:
+            return ""
+        row_html = []
+        current = []
+        for card in cards:
+            current.append(card)
+            if len(current) == 2:
+                row_html.append("<tr>%s</tr>" % "".join(current))
+                current = []
+        if current:
+            current.append("<td width='50%'></td>")
+            row_html.append("<tr>%s</tr>" % "".join(current))
+        return (
+            "<div style='margin-top:8px; padding:5px 7px; background:#242a30; "
+            "border-left:3px solid #f0a7c6; font-weight:700; color:#f0a7c6;'>Driver IOCTL Candidates</div>"
+            "<table width='100%%' cellspacing='0' cellpadding='0'>%s</table>"
+            % "".join(row_html)
+        )
+
+    def _ioctl_experiments_html(self, analysis: Dict[str, Any]) -> str:
+        experiments = analysis.get("ioctl_experiments") or []
+        if not isinstance(experiments, list) or not experiments:
+            return ""
+        cards = []
+        for item in experiments[:4]:
+            if not isinstance(item, dict):
+                continue
+            steps = item.get("steps") or []
+            if not isinstance(steps, list):
+                steps = [steps]
+            verify = item.get("verify") or []
+            if not isinstance(verify, list):
+                verify = [verify]
+            step_html = "".join("<li style='margin:3px 0;'>%s</li>" % html.escape(str(step)) for step in steps[:4])
+            verify_html = "".join(self._chip("Verify", value, "#98f0df") for value in verify[:5])
+            cards.append(
+                "<div style='margin:5px 0; background:#20252a; border:1px solid #333b44; border-radius:4px; padding:8px;'>"
+                "<div style='color:#f0a7c6; font-weight:700;'>%s</div>"
+                "<div style='line-height:1.35; margin:4px 0;'>%s</div>"
+                "<ul style='margin:5px 0 5px 18px; padding:0;'>%s</ul>"
+                "<div>%s</div>"
+                "<div style='margin-top:5px; color:#ffd58a;'><span style='font-weight:700;'>Stop: </span>%s</div>"
+                "</div>"
+                % (
+                    html.escape(str(item.get("title") or "IOCTL audit step")),
+                    html.escape(str(item.get("intent") or "")),
+                    step_html,
+                    verify_html,
+                    html.escape(str(item.get("stop_condition") or "Stop when evidence is insufficient.")),
+                )
+            )
+        return (
+            "<div style='margin-top:8px; padding:5px 7px; background:#242a30; "
+            "border-left:3px solid #f0a7c6; font-weight:700; color:#f0a7c6;'>IOCTL Audit Steps</div>"
+            "%s" % "".join(cards)
+        )
 
     def _score_color(self, score: Any) -> str:
         try:
@@ -4604,6 +4936,21 @@ class MainWidget(QtWidgets.QWidget):
             if isinstance(item, dict):
                 marker = "priority string" if item.get("priority") else "string"
                 lines.append("%s %s :: %s" % (marker, item.get("address"), item.get("value")))
+        driver_likelihood = str(cues.get("driver_ioctl_likelihood") or "").strip()
+        if driver_likelihood and driver_likelihood != "none":
+            lines.append("driver_ioctl_likelihood=%s" % driver_likelihood)
+        for key, label in (
+            ("driver_api_calls", "driver api"),
+            ("ioctl_code_checks", "ioctl code"),
+            ("ioctl_buffer_access", "ioctl buffer"),
+            ("ioctl_validation_checks", "ioctl validation"),
+            ("ioctl_rw_primitives", "ioctl r/w primitive"),
+            ("ioctl_method_hints", "ioctl method"),
+            ("driver_strings", "driver string"),
+        ):
+            for item in (cues.get(key) or [])[:5]:
+                if isinstance(item, dict):
+                    lines.append("%s %s :: %s" % (label, item.get("address") or item.get("from") or "", item.get("line") or item.get("value") or item.get("meaning") or ""))
         return lines
 
     def _append_action_message(self, role: str, text: str, color: str) -> None:
@@ -4800,6 +5147,9 @@ class LocalGameAIForm(PluginFormBase):
         LocalGameAIForm.instance = None
 
 
+_headless_widget = None
+
+
 def show_panel() -> LocalGameAIForm:
     if LocalGameAIForm.instance is None:
         LocalGameAIForm.instance = LocalGameAIForm()
@@ -4814,6 +5164,26 @@ def analyze_focus(force_asm: bool = True) -> LocalGameAIForm:
     if widget is not None:
         widget._start_analysis(force_asm=force_asm)
     return form
+
+
+def _active_or_headless_widget() -> MainWidget:
+    global _headless_widget
+    form = LocalGameAIForm.instance
+    widget = getattr(form, "widget", None) if form is not None else None
+    if widget is not None:
+        return widget
+    if _headless_widget is None:
+        _headless_widget = MainWidget(None, headless=True)
+        _headless_widget.hide()
+    return _headless_widget
+
+
+def analyze_focus_headless(force_asm: bool = True, force_rename: bool = False, local_only: bool = False) -> MainWidget:
+    widget = _active_or_headless_widget()
+    widget.force_apply_name_once = bool(force_rename)
+    widget.force_summary_popup_once = True
+    widget._start_analysis_safely(force_asm=force_asm, local_only=local_only)
+    return widget
 
 
 def reconstruct_focus_pseudocode() -> LocalGameAIForm:

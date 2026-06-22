@@ -174,6 +174,7 @@ function Write-PluginConfig {
             $Data["api_key"] = $EffectiveApiKey
         }
         $Data["analysis_depth"] = "Fast"
+        $Data["analysis_profile"] = "Trainer / Modding"
         $Data["agent_mode"] = "Single"
         $Data["timeout_seconds"] = 300
         $Data["analysis_timeout_seconds"] = 45
