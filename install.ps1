@@ -43,7 +43,7 @@ foreach ($Req in @("requirements.txt", "requirements-toolchain-core.txt", "requi
         Copy-Item -LiteralPath $ReqPath -Destination (Join-Path $PluginTarget $Req) -Force
     }
 }
-foreach ($Helper in @("setup.ps1", "setup.cmd", "MonsteyAI-Launcher.ps1", "MonsteyAI-Launcher.cmd")) {
+foreach ($Helper in @("setup.ps1", "setup.cmd", "upgrade.ps1", "upgrade.cmd", "MonsteyAI-Launcher.ps1", "MonsteyAI-Launcher.cmd")) {
     $HelperPath = Join-Path $Root $Helper
     if (Test-Path -LiteralPath $HelperPath) {
         Copy-Item -LiteralPath $HelperPath -Destination (Join-Path $PluginTarget $Helper) -Force

@@ -51,6 +51,26 @@ Recommended first install from a cloned repo or extracted release:
 .\setup.cmd -InstallScope User -ConfigureLLM -CreateLauncher
 ```
 
+Upgrade/replace an older Monstey install from a freshly cloned or extracted GitHub version:
+
+```powershell
+.\upgrade.cmd -InstallScope User
+```
+
+For an IDA-local install:
+
+```powershell
+.\upgrade.cmd -InstallScope Both -IdaPath "C:\Path\To\IDA Professional 9.0\ida.exe" -CreateLauncher
+```
+
+Upgrade notes:
+
+- `upgrade.cmd` backs up old plugin files under `~\.monstey-ai-plugin\upgrade-backups\...`.
+- Existing `~\.monstey-ai-plugin\config.json` is preserved by default, so local/Gemini/model settings survive the replacement.
+- Add `-ResetConfig -ConfigureLLM` only when you intentionally want fresh LLM defaults.
+- Add `-SkipBackup` only when you want a hard replace without keeping the old plugin files.
+- Restart IDA after upgrading so IDAPython reloads the new files.
+
 Full local stack on a fresh Windows machine with Ollama:
 
 ```powershell
@@ -195,6 +215,11 @@ Setup notes:
   - press `A` again to clear the lock;
   - locked focus takes priority over mouse/cursor focus for Preview and Analyze;
   - the focus indicator uses quieter colors and no large bright dot.
+- Focus performance v0.3.21:
+  - live mouse focus updates are throttled to reduce IDA UI stutter;
+  - expensive focus details such as current line/highlight are cached between address changes;
+  - temporary IDA focus coloring is rate-limited while the mouse is moving;
+  - the focus label skips redundant repaints when the effective focus did not change.
 - Static evidence sources v0.3.8:
   - `Evidence Sources` tab accepts offline/static facts from diffing tools, capa/YARA/FindCrypt-style rules, D-810 notes, structure/vtable hints, signatures, XREF notes, strings, and analyst notes.
   - imported evidence is saved per dump, previewed in normalized form, injected into prompts, added to the Evidence Pack, and rendered as colored cards in the analysis summary.
@@ -213,6 +238,7 @@ Setup notes:
   - variable QLabel surfaces use plain text, while rich HTML summaries continue escaping rendered data.
 - Plug-and-play setup v0.3.11:
   - `setup.cmd` / `setup.ps1` install the plugin into user, IDA, or both plugin scopes;
+  - `upgrade.cmd` / `upgrade.ps1` backs up and replaces older Monstey installs while preserving the user's local config by default;
   - setup can write local or Gemini provider config without mixing provider-specific keys;
   - optional Ollama install/start/model pull prepares a fresh local LLM machine;
   - `MonsteyAI-Launcher.cmd` starts the local backend and launches IDA/dumps;

@@ -19,12 +19,16 @@ except Exception:
 
 MAX_HISTORY = 24
 MOUSE_MAX_AGE_SECONDS = 30.0
+MOUSE_MOVE_THROTTLE_SECONDS = 0.18
+MOUSE_DETAIL_REFRESH_SECONDS = 0.65
 
 _ui_hooks = None
 _view_hooks = None
 _hexrays_hooks = None
 _key_filter = None
 _last_mouse_update = 0.0
+_last_mouse_detail_update = 0.0
+_last_screen_refresh = 0.0
 
 _state: Dict[str, Any] = {
     "installed": False,
@@ -309,24 +313,42 @@ def _update_screen(ea: Any, prev_ea: Any = None) -> None:
 
 
 def _update_mouse(view: Any, event: Any, kind: str) -> None:
+    global _last_mouse_detail_update
+    now = _now()
     widget = _widget_info(view)
     place = _place_snapshot(view, True)
-    line = _current_line(view, True)
+    ea = place.get("ea")
+    previous = _state.get("mouse") or {}
+    previous_ea = previous.get("ea")
+    detailed = (
+        kind != "move"
+        or ea != previous_ea
+        or now - _last_mouse_detail_update >= MOUSE_DETAIL_REFRESH_SECONDS
+    )
+    if detailed:
+        line = _current_line(view, True)
+        highlight = _highlight(view)
+        _last_mouse_detail_update = now
+    else:
+        line = str(previous.get("line") or "")
+        highlight = previous.get("highlight") or {}
     current = {
-        "time": round(_now(), 3),
+        "time": round(now, 3),
         "kind": kind,
         "widget": widget,
         "event": _event_position(event),
         "line": line[:700],
-        "highlight": _highlight(view),
+        "highlight": highlight,
         "place": place,
-        "ea": place.get("ea"),
+        "ea": ea,
+        "detail_cached": not detailed,
     }
     _state["mouse"] = current
     _state["active_widget"] = widget
     if kind in ("click", "double_click"):
         _state["last_click"] = current
-    _push_history("mouse_%s" % kind, current.get("ea"), widget, line)
+    if kind != "move" or ea != previous_ea:
+        _push_history("mouse_%s" % kind, current.get("ea"), widget, line)
 
 
 class MonsteyUIHooks(ida_kernwin.UI_Hooks):
@@ -389,7 +411,7 @@ class MonsteyViewHooks(ida_kernwin.View_Hooks):
     def view_mouse_moved(self, view, event):
         global _last_mouse_update
         now = _now()
-        if now - _last_mouse_update < 0.10:
+        if now - _last_mouse_update < MOUSE_MOVE_THROTTLE_SECONDS:
             return
         _last_mouse_update = now
         try:
@@ -434,7 +456,7 @@ else:
 
 
 def install_navigation_hooks() -> bool:
-    global _ui_hooks, _view_hooks, _hexrays_hooks, _key_filter
+    global _ui_hooks, _view_hooks, _hexrays_hooks, _key_filter, _last_screen_refresh
     ok = True
     if _ui_hooks is None:
         try:
@@ -464,12 +486,18 @@ def install_navigation_hooks() -> bool:
                 app.installEventFilter(_key_filter)
         except Exception:
             _key_filter = None
-    try:
-        ea = ida_kernwin.get_screen_ea()
-        if int(ea) != int(idaapi.BADADDR):
-            _update_screen(ea)
-    except Exception:
-        pass
+    now = _now()
+    if now - _last_screen_refresh >= 1.0 or not (_state.get("screen") or {}).get("ea"):
+        _last_screen_refresh = now
+        try:
+            ea = ida_kernwin.get_screen_ea()
+            if int(ea) != int(idaapi.BADADDR):
+                current_screen = (_state.get("screen") or {}).get("ea")
+                formatted = _fmt_ea(ea)
+                if formatted != current_screen:
+                    _update_screen(ea)
+        except Exception:
+            pass
     _state["installed"] = bool(_ui_hooks or _view_hooks or _hexrays_hooks)
     return ok
 

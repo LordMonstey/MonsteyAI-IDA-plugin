@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.21 - Clean upgrade / replacement script
+
+### Highlights
+
+- Added `upgrade.cmd` / `upgrade.ps1` for replacing older Monstey installs from a freshly cloned or extracted GitHub version.
+- Upgrade backs up old plugin files under `~\.monstey-ai-plugin\upgrade-backups\...` before installing the new version.
+- Existing `config.json` is preserved by default, so provider, model, API key, and analysis settings survive the replacement.
+- Added `-ResetConfig`, `-SkipBackup`, `-InstallScope`, `-IdaPath`, and setup pass-through options for controlled upgrades on another PC.
+- `install.ps1` now copies the upgrade helper into installed plugin folders and release packages.
+- Improved live AI focus performance: mouse tracking is throttled, expensive line/highlight lookups are cached, the focus label avoids redundant repaints, and temporary IDA coloring updates less aggressively while following the cursor.
+
 ## v0.3.20 - Better plain summaries for render/draw functions
 
 ### Highlights

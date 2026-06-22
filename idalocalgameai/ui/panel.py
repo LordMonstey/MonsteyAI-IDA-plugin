@@ -466,6 +466,8 @@ class MainWidget(QtWidgets.QWidget):
         self.analysis_timeout_last_warn = -1
         self.focus_highlight_enabled = True
         self._last_focus_marker_ea = None
+        self._last_focus_marker_update = 0.0
+        self._last_focus_indicator_key = None
         self.analysis_debug_timer = QtCore.QTimer(self)
         self.analysis_debug_timer.setInterval(1000)
         self.analysis_debug_timer.timeout.connect(self._analysis_debug_tick)
@@ -474,7 +476,7 @@ class MainWidget(QtWidgets.QWidget):
         self.pipeline_timer.setInterval(360)
         self.pipeline_timer.timeout.connect(self._pipeline_tick)
         self.focus_indicator_timer = QtCore.QTimer(self)
-        self.focus_indicator_timer.setInterval(350)
+        self.focus_indicator_timer.setInterval(500)
         self.focus_indicator_timer.timeout.connect(self._refresh_focus_indicator)
         self.debug_dialog = None
         self.trainer_radar_dialog = None
@@ -2015,6 +2017,7 @@ class MainWidget(QtWidgets.QWidget):
             overlay.play()
 
     def _refresh_focus_indicator(self) -> None:
+        now = time.time()
         try:
             snap = navigation_snapshot()
             focus = preferred_focus_ea(snap)
@@ -2040,6 +2043,7 @@ class MainWidget(QtWidgets.QWidget):
             age = float(focus.get("age_seconds") or 0.0)
         except Exception:
             age = 0.0
+        age_bucket = round(age * 2.0) / 2.0
         if source == "none" or not focus.get("ea"):
             color = "#7f8994"
             bg = "#1d2023"
@@ -2051,37 +2055,56 @@ class MainWidget(QtWidgets.QWidget):
             color = "#d7a8bb"
             bg = "#2a2228"
             border = "#5a3b49"
-            label = "LOCKED  %s  %.1fs" % (ea, age)
+            label = "LOCKED  %s  %.1fs" % (ea, age_bucket)
         elif source == "mouse" and age <= 2.0:
             color = "#a9cdb6"
             bg = "#202823"
             border = "#34473b"
-            label = "active mouse  %s  %.1fs" % (ea, age)
+            label = "active mouse  %s  %.1fs" % (ea, age_bucket)
         elif source in ("mouse", "last_click") and age <= 30.0:
             color = "#d2c394"
             bg = "#27251e"
             border = "#514a32"
-            label = "cached %s  %s  %.1fs" % (source, ea, age)
+            label = "cached %s  %s  %.1fs" % (source, ea, age_bucket)
         else:
             color = "#adc7d7"
             bg = "#20272c"
             border = "#344955"
-            label = "%s  %s  %.1fs" % (source, ea, age)
+            label = "%s  %s  %.1fs" % (source, ea, age_bucket)
         if symbol:
             label = "%s  %s" % (label, symbol)
         if marker_ea is not None and bool(getattr(self, "focus_highlight_enabled", True)):
             if self._last_focus_marker_ea != marker_ea:
-                set_focus_marker(marker_ea)
-                self._last_focus_marker_ea = marker_ea
+                marker_delay = 0.55 if source == "mouse" else 0.0
+                if marker_delay <= 0.0 or now - float(getattr(self, "_last_focus_marker_update", 0.0)) >= marker_delay:
+                    set_focus_marker(marker_ea)
+                    self._last_focus_marker_ea = marker_ea
+                    self._last_focus_marker_update = now
         elif marker_ea is None or not bool(getattr(self, "focus_highlight_enabled", True)):
             clear_focus_marker()
             self._last_focus_marker_ea = None
-        self.focus_indicator_label.setText(
-            "<span style='color:%s; font-weight:900;'>●</span> "
-            "<span style='color:%s; font-weight:700;'>AI focus</span> "
-            "<span style='color:#edf1f5; font-weight:700;'>%s</span>"
-            % (color, color, html.escape(label))
+            self._last_focus_marker_update = now
+        line = str(focus.get("line") or "").strip()
+        widget = focus.get("widget") if isinstance(focus.get("widget"), dict) else {}
+        highlight = focus.get("highlight") if isinstance(focus.get("highlight"), dict) else {}
+        indicator_key = (
+            source,
+            str(ea),
+            str(symbol),
+            age_bucket,
+            color,
+            bg,
+            border,
+            str(widget.get("title") or ""),
+            str(highlight.get("text") or ""),
+            line[:220],
+            bool(marker_ea is not None),
         )
+        if indicator_key == getattr(self, "_last_focus_indicator_key", None):
+            self.btn_jump_focus.setEnabled(marker_ea is not None)
+            self.btn_mark_review.setEnabled(marker_ea is not None)
+            return
+        self._last_focus_indicator_key = indicator_key
         self.focus_indicator_label.setText(
             "<span style='color:%s; font-weight:700;'>AI focus</span> "
             "<span style='color:#dfe5ea; font-weight:600;'>%s</span>"
@@ -2090,14 +2113,11 @@ class MainWidget(QtWidgets.QWidget):
         self.focus_indicator_label.setStyleSheet(
             "padding:3px 7px; border:1px solid %s; border-radius:4px; background:%s;" % (border, bg)
         )
-        line = str(focus.get("line") or "").strip()
-        widget = focus.get("widget") if isinstance(focus.get("widget"), dict) else {}
-        highlight = focus.get("highlight") if isinstance(focus.get("highlight"), dict) else {}
         tip = [
             "Source: %s" % source,
             "Address: %s" % ea,
             "Name: %s" % (symbol or "-"),
-            "Age: %.2fs" % age,
+            "Age: %.2fs" % age_bucket,
             "Widget: %s" % (widget.get("title") or "-"),
             "Lock shortcut: hold A for 1.5s to lock here; press A again to unlock.",
         ]
